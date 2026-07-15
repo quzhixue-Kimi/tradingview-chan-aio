@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.env
+
+# 前端（如果是 Node.js）
+node_modules/
+dist/
+.next/
+
+# 通用
+.DS_Store
+*.log
