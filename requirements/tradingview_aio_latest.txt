@@ -1,0 +1,381 @@
+// This work is licensed under Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+// https://creativecommons.org/licenses/by-nc-sa/4.0/
+// © BigBeluga (Pivot S/R 部分版权归原作者所有)
+// 合并脚本：BYTZ+MA+NINE  +  High Volume Pivot Support & Resistance Zones [BigBeluga]
+
+//@version=6
+indicator(title="BYTZ+MA+NINE + High Volume Pivot S/R [Merged]", shorttitle="NX+PivotSR", overlay=true, max_boxes_count=500)
+
+// ========================================================================================
+// ============================  第一部分：BYTZ + MA + 神奇九转  ===========================
+// ========================================================================================
+
+// 1. 蓝色通道 (短期/快通道)
+len_blue_high = input.int(24, title="蓝通道高价EMA长度", minval=1, group="通道设置")
+len_blue_low = input.int(23, title="蓝通道低价EMA长度", minval=1, group="通道设置")
+// 黄色通道 (长期/慢通道)
+len_yellow_high = input.int(89, title="黄通道高价EMA长度", minval=1, group="通道设置")
+len_yellow_low = input.int(90, title="黄通道低价EMA长度", minval=1, group="通道设置")
+
+// ----------- 2. 指标计算 (使用 EMA of High/Low) -----------
+A_blue = ta.ema(high, len_blue_high)
+B_blue = ta.ema(low, len_blue_low)
+A_yellow = ta.ema(high, len_yellow_high)
+B_yellow = ta.ema(low, len_yellow_low)
+
+// ----------- 3. 图表绘制与区域填充 -----------
+// 3.1 绘制和填充蓝色通道
+p_blue_up = plot(A_blue, color=color.new(color.blue, 0), title="蓝通道上沿")
+p_blue_down = plot(B_blue, color=color.new(color.blue, 0), title="蓝通道下沿")
+fill(p_blue_up, p_blue_down, color=(close > A_blue or close < B_blue) ? color.new(color.blue, 70) : color.new(color.blue, 100), title="蓝色通道填充")
+
+// 3.2 绘制和填充黄色通道
+p_yellow_up = plot(A_yellow, color=color.new(color.yellow, 0), title="黄通道上沿")
+p_yellow_down = plot(B_yellow, color=color.new(color.yellow, 0), title="黄通道下沿")
+fill(p_yellow_up, p_yellow_down, color=(close > A_yellow or close < B_yellow) ? color.new(color.yellow, 70) : color.new(color.yellow, 100), title="黄色通道填充")
+
+// 2. MA 均线参数设置
+ma55_len = input.int(55, title="MA55 长度", minval=1, group="均线设置")
+ma60_len = input.int(60, title="MA60 长度", minval=1, group="均线设置")
+ma65_len = input.int(65, title="MA65 长度", minval=1, group="均线设置")
+ma120_len = input.int(120, title="MA120 长度", minval=1, group="均线设置")
+ma250_len = input.int(250, title="MA250 长度", minval=1, group="均线设置")
+ma55 = ta.sma(close, ma55_len)
+ma60 = ta.sma(close, ma60_len)
+ma65 = ta.sma(close, ma65_len)
+ma120 = ta.sma(close, ma120_len)
+ma250 = ta.sma(close, ma250_len)
+plot(ma55, color=color.new(color.red, 0), title="MA55", linewidth=2)
+plot(ma60, color=color.new(color.white, 0), title="MA60", linewidth=2)
+plot(ma65, color=color.new(color.green, 0), title="MA65", linewidth=2)
+plot(ma120, color=color.new(color.purple, 0), title="MA120", linewidth=4)
+plot(ma250, color=color.new(color.red, 0), title="MA250", linewidth=6)
+
+// 3. 神奇九转 (仅在完成9时显示)
+show_td = input.bool(true, title="显示神奇九转", group="神奇九转设置")
+var int td_up = 0 // 上升计数
+var int td_dn = 0 // 下降计数
+if close > close[4]
+    td_up := td_up + 1
+    td_dn := 0
+else
+    if close < close[4]
+        td_dn := td_dn + 1
+        td_up := 0
+    else
+        td_up := 0
+        td_dn := 0
+
+// 1. 处理上涨结构 (高位九转 - 1-8 紫色,9 绿色)
+if show_td and td_up == 9
+    for i = 0 to 8
+        num = 9 - i
+        textcolor_up = num == 9 ? color.green : color.new(#FF00FF, 0)
+        label.new(bar_index - i, na,
+             text=str.tostring(num),
+             color=color(na),
+             textcolor=textcolor_up,
+             style=label.style_none,
+             yloc=yloc.abovebar)
+// 1.1 处理上涨结构的当前bar部分计数 (5-8,全部紫色)
+if show_td and barstate.islast and td_up >= 5 and td_up < 9
+    for i = 0 to td_up - 1
+        num = td_up - i
+        textcolor_up_partial = color.new(#FF00FF, 0)
+        label.new(bar_index - i, na,
+             text=str.tostring(num),
+             color=color(na),
+             textcolor=textcolor_up_partial,
+             style=label.style_none,
+             yloc=yloc.abovebar)
+// 2. 处理下跌结构 (低位九转 - 1-8 绿色,9 紫色)
+if show_td and td_dn == 9
+    for i = 0 to 8
+        num = 9 - i
+        textcolor_dn = num == 9 ? color.new(#FF00FF, 0) : color.green
+        label.new(bar_index - i, na,
+             text=str.tostring(num),
+             color=color(na),
+             textcolor=textcolor_dn,
+             style=label.style_none,
+             yloc=yloc.belowbar)
+// 2.1 处理下跌结构的当前bar部分计数 (5-8,全部绿色)
+if show_td and barstate.islast and td_dn >= 5 and td_dn < 9
+    for i = 0 to td_dn - 1
+        num = td_dn - i
+        textcolor_dn_partial = color.green
+        label.new(bar_index - i, na,
+             text=str.tostring(num),
+             color=color(na),
+             textcolor=textcolor_dn_partial,
+             style=label.style_none,
+             yloc=yloc.belowbar)
+
+
+// ========================================================================================
+// =================  第二部分：High Volume Pivot Support & Resistance Zones  =============
+// ========================================================================================
+
+var string G_PIVOT = 'Pivot Settings'
+resLen = input.int(40, title = 'Resistance Pivot Length', minval = 1, group = G_PIVOT, tooltip = 'The number of bars required before and after a high peak to confirm a structural resistance pivot.')
+supLen = input.int(40, title = 'Support Pivot Length', minval = 1, group = G_PIVOT, tooltip = 'The number of bars required before and after a low trough to confirm a structural support pivot.')
+
+var string G_VOL = 'Volume Validation'
+volAvgLen = input.int(20, title = 'Volume MA Length', minval = 1, group = G_VOL, tooltip = 'The lookback period used to calculate the Simple Moving Average (SMA) of volume for baseline comparison.')
+volMult = input.float(1.2, title = 'Volume Threshold Multiplier', minval = 0.1, group = G_VOL, tooltip = 'The multiplier applied to the volume SMA baseline. A pivot bar must exceed this total value to be validated.')
+
+var string G_ZONE = 'Zone Settings'
+atrLen      = 100
+resColor    = input.color(color.new(#2196f3, 85), title = 'Resistance Zone Color', group = G_ZONE, tooltip = 'The background fill color applied to active resistance zones.')
+resLine     = input.color(#2196f3, title = 'Resistance Line Color', group = G_ZONE, tooltip = 'The outline border color for resistance zones and its corresponding text markers.')
+supColor    = input.color(color.new(#ffc13b, 85), title = 'Support Zone Color', group = G_ZONE, tooltip = 'The background fill color applied to active support zones.')
+supLine     = input.color(#ffc13b, title = 'Support Line Color', group = G_ZONE, tooltip = 'The outline border color for support zones and its corresponding text markers.')
+
+// ATR for box padding
+atr = ta.atr(200)
+
+// Volume Validation
+avgVol = ta.sma(volume, volAvgLen)
+isHighVolume = volume > avgVol * volMult
+
+// Calculate Volume Delta per bar (Up volume minus Down volume based on bar close)
+volDelta = close >= open ? volume : -volume
+
+// Pivot Detection
+pHi = ta.pivothigh(high, resLen, resLen)
+pLo = ta.pivotlow(low, supLen, supLen)
+
+// Detect valid pivots on the bar where they are confirmed
+validPivotHigh = not na(pHi) and isHighVolume[resLen]
+validPivotLow = not na(pLo) and isHighVolume[supLen]
+
+// Zone & Polyline Management Initialization
+var box lastResBox = na
+var box lastSupBox = na
+
+var polyline resDeltaLine = na
+var polyline supDeltaLine = na
+
+var label resCvdLabel = na
+var label supCvdLabel = na
+
+var array<chart.point> resPoints = array.new<chart.point>()
+var array<chart.point> supPoints = array.new<chart.point>()
+var array<float> resDeltas = array.new<float>()
+var array<float> supDeltas = array.new<float>()
+
+var float cumResDelta = 0.0
+var float cumSupDelta = 0.0
+
+var bool resBroken = false
+var bool supBroken = false
+
+bool triggerResBreak = false
+bool triggerSupBreak = false
+bool triggerResRetest = false
+bool triggerSupRetest = false
+bool triggerFlippedResRetest = false
+bool triggerFlippedSupRetest = false
+
+// Helper Functions
+normalizeDeltaToBox(float currentDelta, float minDelta, float maxDelta, float boxBottom, float boxTop) =>
+    float rangeDelta = maxDelta - minDelta
+    float rangeBox = boxTop - boxBottom
+    rangeDelta == 0 ? boxBottom + rangeBox / 2 : boxBottom + (currentDelta - minDelta) / rangeDelta * rangeBox
+
+formatVolume(float vol) =>
+    float absVol = math.abs(vol)
+    string sign = vol < 0 ? '-' : ''
+    if absVol >= 1000000
+        sign + str.tostring(absVol / 1000000, '0.0') + 'M'
+    else if absVol >= 1000
+        sign + str.tostring(absVol / 1000, '0.0') + 'K'
+    else
+        sign + str.tostring(absVol, '0')
+
+// Handle Resistance Zone Actions
+if validPivotHigh
+    resBroken := false
+    float pivotBodyTop = math.max(open[resLen], close[resLen])
+    float topPrice = pivotBodyTop + atr[resLen]
+    float bottomPrice = pivotBodyTop
+
+    if not na(lastResBox)
+        box.set_right(lastResBox, bar_index)
+
+    string volText = 'Vol: ' + formatVolume(-volume[resLen])
+    lastResBox := box.new(left = bar_index - resLen, top = topPrice, right = bar_index, bottom = bottomPrice, bgcolor = resColor, border_color = resLine, border_style = line.style_solid, text = volText, text_size = size.small, text_color = resLine, text_valign = text.align_top, text_halign = text.align_left)
+
+    if not na(resDeltaLine)
+        polyline.delete(resDeltaLine)
+    if not na(resCvdLabel)
+        label.delete(resCvdLabel)
+
+    cumResDelta := 0.0
+    array.clear(resPoints)
+    array.clear(resDeltas)
+
+    for i = resLen to 0 by 1
+        cumResDelta := cumResDelta + volDelta[i]
+        array.push(resDeltas, cumResDelta)
+        array.push(resPoints, chart.point.from_index(bar_index - i, bottomPrice))
+
+    resDeltaLine := polyline.new(points = resPoints, line_color = chart.fg_color, line_width = 1, line_style = line.style_dotted)
+    resCvdLabel := label.new(x = bar_index, y = bottomPrice, text = 'CVD: ' + formatVolume(cumResDelta), color = color.new(color.black, 100), textcolor = resLine, style = label.style_label_left, size = size.small)
+    resCvdLabel
+else
+    if not na(lastResBox)
+        box.set_right(lastResBox, bar_index)
+        float rTop = box.get_top(lastResBox)
+        float rBottom = box.get_bottom(lastResBox)
+
+        cumResDelta := cumResDelta + volDelta
+        array.push(resDeltas, cumResDelta)
+        array.push(resPoints, chart.point.from_index(bar_index, rBottom))
+
+        color activeResLineColor = close > rTop or resBroken ? supLine : resLine
+
+        if array.size(resPoints) > 1
+            float maxD = array.max(resDeltas)
+            float minD = array.min(resDeltas)
+            float finalScaledY = rBottom
+
+            for i = 0 to array.size(resPoints) - 1 by 1
+                float currentD = array.get(resDeltas, i)
+                float scaledY = normalizeDeltaToBox(currentD, minD, maxD, rBottom, rTop)
+                pointItem = array.get(resPoints, i)
+                array.set(resPoints, i, chart.point.from_index(pointItem.index, scaledY))
+                if i == array.size(resPoints) - 1
+                    finalScaledY := scaledY
+                    finalScaledY
+
+            if not na(resDeltaLine)
+                polyline.delete(resDeltaLine)
+            resDeltaLine := polyline.new(points = resPoints, line_color = chart.fg_color, line_width = 1, line_style = line.style_dotted)
+
+            if not na(resCvdLabel)
+                label.delete(resCvdLabel)
+            resCvdLabel := label.new(x = bar_index, y = finalScaledY, text = 'CVD: ' + formatVolume(cumResDelta), color = color.new(color.black, 100), textcolor = activeResLineColor, style = label.style_label_left, size = size.small)
+            resCvdLabel
+
+        if close < rTop
+            box.set_bgcolor(lastResBox, color.new(resColor, 80))
+            box.set_border_color(lastResBox, resLine)
+            box.set_text_color(lastResBox, resLine)
+
+            if  high[1] >= rBottom and high < rBottom
+                triggerResRetest := true
+                triggerResRetest
+
+        if close > rTop
+            box.set_bgcolor(lastResBox, color.new(supColor, 90))
+            box.set_border_color(lastResBox, supLine)
+            box.set_text_color(lastResBox, supLine)
+            box.set_border_style(lastResBox, line.style_dotted)
+
+            if not resBroken
+                triggerResBreak := true
+                resBroken := true
+                resBroken
+
+            change = resBroken != resBroken[1]
+            if low[1] <= rTop and low > rTop and not (change or change[1])
+                triggerFlippedResRetest := true
+                triggerFlippedResRetest
+
+// Handle Support Zone Actions
+if validPivotLow
+    supBroken := false
+    float pivotBodyBottom = math.min(open[supLen], close[supLen])
+    float topPrice = pivotBodyBottom
+    float bottomPrice = pivotBodyBottom - atr[supLen]
+
+    if not na(lastSupBox)
+        box.set_right(lastSupBox, bar_index)
+
+    string volText = 'Vol: ' + formatVolume(volume[supLen])
+    lastSupBox := box.new(left = bar_index - supLen, top = topPrice, right = bar_index, bottom = bottomPrice, bgcolor = supColor, border_color = supLine, border_style = line.style_solid, text = volText, text_size = size.small, text_color = supLine, text_valign = text.align_bottom, text_halign = text.align_left)
+
+    if not na(supDeltaLine)
+        polyline.delete(supDeltaLine)
+    if not na(supCvdLabel)
+        label.delete(supCvdLabel)
+
+    cumSupDelta := 0.0
+    array.clear(supPoints)
+    array.clear(supDeltas)
+
+    for i = supLen to 0 by 1
+        cumSupDelta := cumSupDelta + volDelta[i]
+        array.push(supDeltas, cumSupDelta)
+        array.push(supPoints, chart.point.from_index(bar_index - i, bottomPrice))
+
+    supDeltaLine := polyline.new(points = supPoints, line_color = chart.fg_color, line_width = 1, line_style = line.style_dotted)
+    supCvdLabel := label.new(x = bar_index, y = bottomPrice, text = 'CVD: ' + formatVolume(cumSupDelta), color = color.new(color.black, 100), textcolor = supLine, style = label.style_label_left, size = size.small)
+    supCvdLabel
+else
+    if not na(lastSupBox)
+        box.set_right(lastSupBox, bar_index)
+        float sTop = box.get_top(lastSupBox)
+        float sBottom = box.get_bottom(lastSupBox)
+
+        cumSupDelta := cumSupDelta + volDelta
+        array.push(supDeltas, cumSupDelta)
+        array.push(supPoints, chart.point.from_index(bar_index, sBottom))
+
+        color activeSupLineColor = close < sTop or supBroken ? resLine : supLine
+
+        if array.size(supPoints) > 1
+            float maxD = array.max(supDeltas)
+            float minD = array.min(supDeltas)
+            float finalScaledY = sBottom
+
+            for i = 0 to array.size(supPoints) - 1 by 1
+                float currentD = array.get(supDeltas, i)
+                float scaledY = normalizeDeltaToBox(currentD, minD, maxD, sBottom, sTop)
+                pointItem = array.get(supPoints, i)
+                array.set(supPoints, i, chart.point.from_index(pointItem.index, scaledY))
+                if i == array.size(supPoints) - 1
+                    finalScaledY := scaledY
+                    finalScaledY
+
+            if not na(supDeltaLine)
+                polyline.delete(supDeltaLine)
+            supDeltaLine := polyline.new(points = supPoints, line_color = chart.fg_color, line_width = 1, line_style = line.style_dotted)
+
+            if not na(supCvdLabel)
+                label.delete(supCvdLabel)
+            supCvdLabel := label.new(x = bar_index, y = finalScaledY, text = 'CVD: ' + formatVolume(cumSupDelta), color = color.new(color.black, 100), textcolor = activeSupLineColor, style = label.style_label_left, size = size.small)
+            supCvdLabel
+
+        if close < sBottom
+            box.set_bgcolor(lastSupBox, color.new(resColor, 90))
+            box.set_border_color(lastSupBox, color.new(resLine, 0))
+            box.set_text_color(lastSupBox, resLine)
+            box.set_border_style(lastSupBox, line.style_dotted)
+
+            if not supBroken
+                triggerSupBreak := true
+                supBroken := true
+                supBroken
+            if high[1] >= sBottom and high < sBottom
+                triggerFlippedSupRetest := true
+                triggerFlippedSupRetest
+
+        if close > sBottom
+            box.set_bgcolor(lastSupBox, color.new(supColor, 80))
+            box.set_border_color(lastSupBox, supLine)
+            box.set_text_color(lastSupBox, supLine)
+            if  low[1] <= sTop and low > sTop
+                triggerSupRetest := true
+                triggerSupRetest
+
+// Shape & Breakout Plots
+plotshape(triggerResBreak, title = 'Resistance Breakout', style = shape.triangleup, location = location.belowbar, color = supLine, text = 'Res Breakout', textcolor = chart.fg_color, size = size.tiny)
+plotshape(triggerSupBreak, title = 'Support Breakdown', style = shape.triangledown, location = location.abovebar, color = resLine, text = 'Sup Breakdown', textcolor = chart.fg_color, size = size.tiny)
+
+plotshape(triggerSupRetest, title = 'Support Hold Retest', style = shape.circle, location = location.belowbar, color = supLine, size = size.tiny, offset = -1)
+plotshape(triggerResRetest, title = 'Resistance Hold Retest', style = shape.circle, location = location.abovebar, color = resLine, size= size.tiny, offset = -1)
+
+plotshape(triggerFlippedResRetest, title = 'Flipped Res Retest', style = shape.diamond, location = location.belowbar, color = supLine, size = size.tiny, offset = -1)
+plotshape(triggerFlippedSupRetest, title = 'Flipped Sup Retest', style = shape.diamond, location = location.abovebar, color = resLine, size = size.tiny, offset = -1)
