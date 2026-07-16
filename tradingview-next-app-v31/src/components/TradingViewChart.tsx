@@ -11,6 +11,7 @@ import { isCryptoSymbol, parseTimeToUnixMs } from "@/lib/utils";
 
 const TV_CONTAINER_ID = "tv_chart_container";
 const TD9_BSP_STUDY_NAME = "TD9 Labels BSP List";
+const PIVOT_SR_STUDY_NAME = "Pivot S/R Zones";
 const STUDY_POLL_MS = 800;
 
 declare global {
@@ -84,6 +85,28 @@ interface Td9Label {
   color?: string;
 }
 
+interface CvdPoint {
+  time: string;
+  value: number | null;
+  raw_cvd: number | null;
+}
+
+interface PivotZone {
+  left_time: string;
+  right_time: string;
+  top: number;
+  bottom: number;
+  vol_text: string;
+  cvd_points: CvdPoint[];
+  cvd_label: string;
+  is_broken: boolean;
+}
+
+interface PivotSrZones {
+  resistance_zones: PivotZone[];
+  support_zones: PivotZone[];
+}
+
 interface ChanPatterns {
   raw_kline_list: KLineItem[];
   bi_list: BiItem[];
@@ -94,6 +117,7 @@ interface ChanPatterns {
   yellow_upper?: LadderPoint[];
   yellow_lower?: LadderPoint[];
   td9_labels?: Td9Label[];
+  pivot_sr?: PivotSrZones;
 }
 
 type TvPoint = {
@@ -334,6 +358,60 @@ function buildTd9BspIndicator(PineJS: any) {
   };
 }
 
+function buildPivotSrIndicator(PineJS: any) {
+  return {
+    name: PIVOT_SR_STUDY_NAME,
+    metainfo: {
+      _metainfoVersion: 53,
+      id: "pivot_sr@tv-basicstudies-1",
+      description: PIVOT_SR_STUDY_NAME,
+      shortDescription: PIVOT_SR_STUDY_NAME,
+      isCustomIndicator: true,
+      is_price_study: true,
+      is_hidden_study: false,
+      isTVScript: false,
+      isTVScriptStub: false,
+      format: {
+        type: "inherit",
+      },
+      plots: [
+        {
+          id: "plot_0",
+          type: "line",
+        },
+      ],
+      styles: {
+        plot_0: {
+          title: PIVOT_SR_STUDY_NAME,
+          histogramBase: 0,
+        },
+      },
+      defaults: {
+        styles: {
+          plot_0: {
+            linestyle: 0,
+            linewidth: 1,
+            plottype: 2,
+            trackPrice: false,
+            transparency: 100,
+            visible: false,
+            color: "#000000",
+          },
+        },
+        precision: 2,
+        inputs: {},
+      },
+      inputs: [],
+    },
+    constructor: function (this: any) {
+      this.main = function (context: any) {
+        const close = PineJS.Std.close(context);
+        return [close];
+      };
+    },
+  };
+}
+
 export default function TradingViewChart({
   initialSymbol,
   initialInterval,
@@ -350,6 +428,8 @@ export default function TradingViewChart({
   const baseShapeIdsRef = useRef<DrawnShapeId[]>([]);
   const td9BspShapeIdsRef = useRef<DrawnShapeId[]>([]);
   const td9BspEnabledRef = useRef(false);
+  const pivotSrShapeIdsRef = useRef<DrawnShapeId[]>([]);
+  const pivotSrEnabledRef = useRef(false);
 
   const widgetIdRef = useRef(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -411,7 +491,7 @@ export default function TradingViewChart({
         symbol_search_request_delay: 0,
         debug: true,
         custom_indicators_getter: async (PineJS: any) => {
-          return [buildTd9BspIndicator(PineJS)];
+          return [buildTd9BspIndicator(PineJS), buildPivotSrIndicator(PineJS)];
         },
       });
 
@@ -827,6 +907,170 @@ export default function TradingViewChart({
         }
       };
 
+      const PIVOT_SR_RES_COLOR = "#2196f3";
+      const PIVOT_SR_SUP_COLOR = "#ffc13b";
+
+      const drawPivotZoneSet = async (
+        zones: PivotZone[],
+        defaultColor: string,
+        flippedColor: string,
+      ) => {
+        for (const zone of zones) {
+          const leftTs = normalizeShapeTime(zone.left_time, isCrypto);
+          const rightTs = normalizeShapeTime(zone.right_time, isCrypto);
+          if (leftTs == null || rightTs == null) continue;
+          if (zone.top == null || zone.bottom == null) continue;
+
+          const boxColor = defaultColor;
+          const backgroundColor =
+            boxColor === PIVOT_SR_RES_COLOR
+              ? "rgba(33,150,243,0.12)"
+              : "rgba(255,193,59,0.12)";
+
+          // Zone box (rectangle spanning left_time/top to right_time/bottom)
+          try {
+            const shapeId = await chart.createMultipointShape?.(
+              [
+                { time: leftTs as any, price: zone.top },
+                { time: rightTs as any, price: zone.bottom },
+              ],
+              {
+                shape: "rectangle",
+                lock: true,
+                disableSelection: true,
+                disableSave: true,
+                disableUndo: true,
+                overrides: {
+                  linecolor: boxColor,
+                  fillBackground: true,
+                  backgroundColor,
+                  transparency: 80,
+                  linewidth: 1,
+                  linestyle: zone.is_broken ? 2 : 0,
+                },
+              },
+            );
+            saveShapeId(pivotSrShapeIdsRef, shapeId);
+          } catch (e) {
+            console.error("[pivot_sr] draw zone box failed", e);
+          }
+
+          // CVD dotted polyline inside the box
+          const cvdPoints: TvPoint[] = (zone.cvd_points || [])
+            .map((pt) => {
+              const ts = normalizeShapeTime(pt.time, isCrypto);
+              if (
+                ts == null ||
+                pt.value == null ||
+                !Number.isFinite(pt.value)
+              ) {
+                return null;
+              }
+              return { time: ts, price: pt.value };
+            })
+            .filter((pt): pt is TvPoint => pt !== null);
+
+          if (cvdPoints.length >= 2) {
+            const segments = splitPolylineSegments(cvdPoints);
+            for (const seg of segments) {
+              for (let i = 1; i < seg.length; i++) {
+                try {
+                  const shapeId = await chart.createMultipointShape?.(
+                    [seg[i - 1], seg[i]],
+                    {
+                      shape: "trend_line",
+                      lock: true,
+                      disableSelection: true,
+                      disableSave: true,
+                      disableUndo: true,
+                      overrides: {
+                        linecolor: "#ffffff",
+                        linewidth: 1,
+                        linestyle: 2,
+                      },
+                    },
+                  );
+                  saveShapeId(pivotSrShapeIdsRef, shapeId);
+                } catch {}
+              }
+            }
+          }
+
+          // "Vol: xxK" label near the top-left corner of the box
+          if (zone.vol_text) {
+            try {
+              const shapeId = await chart.createShape(
+                { time: leftTs as any, price: zone.top },
+                {
+                  shape: "text",
+                  text: zone.vol_text,
+                  lock: true,
+                  disableSelection: true,
+                  disableSave: true,
+                  disableUndo: true,
+                  overrides: {
+                    color: boxColor,
+                    textColor: boxColor,
+                    fontsize: 11,
+                    bold: false,
+                    vertAlign: "top",
+                  },
+                },
+              );
+              saveShapeId(pivotSrShapeIdsRef, shapeId);
+            } catch (e) {
+              console.error("[pivot_sr] draw vol label failed", e);
+            }
+          }
+
+          // "CVD: xxK" label near the top-right corner (last cvd point) of the box
+          if (zone.cvd_label) {
+            try {
+              const shapeId = await chart.createShape(
+                { time: rightTs as any, price: zone.top },
+                {
+                  shape: "text",
+                  text: zone.cvd_label,
+                  lock: true,
+                  disableSelection: true,
+                  disableSave: true,
+                  disableUndo: true,
+                  overrides: {
+                    color: boxColor,
+                    textColor: boxColor,
+                    fontsize: 11,
+                    bold: false,
+                    vertAlign: "top",
+                  },
+                },
+              );
+              saveShapeId(pivotSrShapeIdsRef, shapeId);
+            } catch (e) {
+              console.error("[pivot_sr] draw cvd label failed", e);
+            }
+          }
+        }
+      };
+
+      const drawPivotSrOverlay = async () => {
+        clearShapes(pivotSrShapeIdsRef);
+
+        const patterns = datafeedRef.current?.getChanPatterns();
+        const pivotSr = patterns?.pivot_sr;
+        if (!pivotSr) return;
+
+        await drawPivotZoneSet(
+          pivotSr.resistance_zones || [],
+          PIVOT_SR_RES_COLOR,
+          PIVOT_SR_SUP_COLOR,
+        );
+        await drawPivotZoneSet(
+          pivotSr.support_zones || [],
+          PIVOT_SR_SUP_COLOR,
+          PIVOT_SR_RES_COLOR,
+        );
+      };
+
       const hasTd9BspStudy = (): boolean => {
         const studies = chart.getAllStudies?.() ?? [];
         return studies.some((item) => {
@@ -857,6 +1101,36 @@ export default function TradingViewChart({
         }
       };
 
+      const hasPivotSrStudy = (): boolean => {
+        const studies = chart.getAllStudies?.() ?? [];
+        return studies.some((item) => {
+          const name = String(
+            item.name || item.description || "",
+          ).toLowerCase();
+          return name.includes(PIVOT_SR_STUDY_NAME.toLowerCase());
+        });
+      };
+
+      const refreshPivotSrByStudyState = async (forceRedraw = false) => {
+        const enabled = hasPivotSrStudy();
+
+        if (enabled !== pivotSrEnabledRef.current) {
+          pivotSrEnabledRef.current = enabled;
+        }
+
+        if (!enabled) {
+          clearShapes(pivotSrShapeIdsRef);
+          return;
+        }
+
+        if (
+          enabled &&
+          (forceRedraw || pivotSrShapeIdsRef.current.length === 0)
+        ) {
+          await drawPivotSrOverlay();
+        }
+      };
+
       const safeRefreshAll = () => {
         let cancelled = false;
 
@@ -868,6 +1142,7 @@ export default function TradingViewChart({
           try {
             await drawBasePatterns();
             await refreshOverlayByStudyState(true);
+            await refreshPivotSrByStudyState(true);
           } catch (err) {
             console.error("[TradingView] refresh failed", err);
             if (retries > 0 && !cancelled) {
@@ -891,6 +1166,7 @@ export default function TradingViewChart({
       chart.onSymbolChanged().subscribe(null, () => {
         clearShapes(baseShapeIdsRef);
         clearShapes(td9BspShapeIdsRef);
+        clearShapes(pivotSrShapeIdsRef);
         datafeedRef.current?.clearCache();
 
         const newSymbol = chart
@@ -908,12 +1184,14 @@ export default function TradingViewChart({
         chart.onIntervalChanged().subscribe(null, () => {
           clearShapes(baseShapeIdsRef);
           clearShapes(td9BspShapeIdsRef);
+          clearShapes(pivotSrShapeIdsRef);
           datafeedRef.current?.clearCache();
         });
       }
 
       pollTimer = window.setInterval(() => {
         void refreshOverlayByStudyState(false);
+        void refreshPivotSrByStudyState(false);
       }, STUDY_POLL_MS);
     });
 
@@ -940,6 +1218,8 @@ export default function TradingViewChart({
       baseShapeIdsRef.current = [];
       td9BspShapeIdsRef.current = [];
       td9BspEnabledRef.current = false;
+      pivotSrShapeIdsRef.current = [];
+      pivotSrEnabledRef.current = false;
     };
   }, [initialSymbol, initialInterval, onSymbolChange]);
 

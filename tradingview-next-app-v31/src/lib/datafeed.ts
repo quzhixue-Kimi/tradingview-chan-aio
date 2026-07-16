@@ -86,6 +86,28 @@ export interface LadderLines {
   yellow_lower: LadderPoint[];
 }
 
+export interface CvdPoint {
+  time: string;
+  value: number | null;
+  raw_cvd: number | null;
+}
+
+export interface PivotZone {
+  left_time: string;
+  right_time: string;
+  top: number;
+  bottom: number;
+  vol_text: string;
+  cvd_points: CvdPoint[];
+  cvd_label: string;
+  is_broken: boolean;
+}
+
+export interface PivotSrZones {
+  resistance_zones: PivotZone[];
+  support_zones: PivotZone[];
+}
+
 interface Bar {
   time: number;
   open: number;
@@ -177,6 +199,7 @@ interface ChanPatterns {
   blue_lower?: LadderPoint[];
   yellow_upper?: LadderPoint[];
   yellow_lower?: LadderPoint[];
+  pivot_sr?: PivotSrZones;
 }
 
 function getApiUrl(): string {
@@ -259,6 +282,31 @@ function extractTd9Labels(payload: any) {
     payload?.data?.td9_labels,
     payload?.data?.td9Labels,
   );
+}
+
+function isPivotZoneArray(input: any): input is PivotZone[] {
+  return (
+    Array.isArray(input) &&
+    input.every(
+      (item) =>
+        item &&
+        typeof item.left_time === "string" &&
+        typeof item.right_time === "string" &&
+        typeof item.top === "number" &&
+        typeof item.bottom === "number",
+    )
+  );
+}
+
+function extractPivotSrZones(raw: any): PivotSrZones {
+  const payload = extractIndicatorsPayload(raw);
+  const resistance = payload?.resistance_zones;
+  const support = payload?.support_zones;
+
+  return {
+    resistance_zones: isPivotZoneArray(resistance) ? resistance : [],
+    support_zones: isPivotZoneArray(support) ? support : [],
+  };
 }
 
 function normalizeSymbolInput(symbolName: string): string {
@@ -472,6 +520,31 @@ export class CustomDatafeed {
         console.log("[Datafeed] indicators fetch failed", e);
       }
 
+      let pivotSrZones: PivotSrZones = {
+        resistance_zones: [],
+        support_zones: [],
+      };
+
+      try {
+        const pivotSrResp = await fetch(`${this.apiUrl}/api/chan/pivot_sr`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: backendCode, level }),
+        });
+
+        if (pivotSrResp.ok) {
+          const pivotSrRaw = await pivotSrResp.json();
+          pivotSrZones = extractPivotSrZones(pivotSrRaw);
+
+          console.log("[Datafeed] pivot_sr parsed", {
+            resistance: pivotSrZones.resistance_zones.length,
+            support: pivotSrZones.support_zones.length,
+          });
+        }
+      } catch (e) {
+        console.log("[Datafeed] pivot_sr fetch failed", e);
+      }
+
       const rawKlines = data.data.raw_kline_list || [];
       const allSortedKlines = [...rawKlines].sort(
         (a, b) =>
@@ -517,6 +590,7 @@ export class CustomDatafeed {
         zs_list: data.data.zs_list || [],
         bsp_list: data.data.bsp_list || [],
         td9_labels: combinedTd9List,
+        pivot_sr: pivotSrZones,
         ...combinedLadderLines,
       };
 

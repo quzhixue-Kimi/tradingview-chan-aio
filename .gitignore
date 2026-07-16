@@ -13,3 +13,5 @@ dist/
 # 通用
 .DS_Store
 *.log
+
+bun.lock
