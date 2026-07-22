@@ -87,6 +87,8 @@ DEFAULT_SYMBOLS = [
   "ORCL",
   "BTC-USD",
   "ETH-USD",
+  "YINN",
+  "YANG",
 ]
 DEFAULT_LEVELS: list[LevelType] = ["1D", "1H", "2H", "4H", "30M", "15M"]
 
@@ -723,13 +725,23 @@ def _push_queue_to_telegram(config: WorkflowConfig):
     logger.exception("[QUEUE-PUSH] telegram推送异常: %s", e)
 
 
+_DESIRED_STRATEGIES: list[str] = [
+  "v5_macdtd",
+  "v7_bi",
+  "v8_byma",
+]
+
+
 def run_backtest_step(config: WorkflowConfig, note: str | None = None) -> dict:
   backtest_url = f"{config.base_url.rstrip('/')}/api/chan/backtest"
   payload = {
-    "run_mode": "all",
+    "run_mode": "batch",
+    "strategy_ids": list(_DESIRED_STRATEGIES),
     "note": note or f"scheduled workflow {_now_str(config.timezone)}",
   }
-  logger.info("[BACKTEST] request run_mode=all")
+  logger.info(
+    "[BACKTEST] request run_mode=batch strategy_ids=%s", payload["strategy_ids"]
+  )
   resp = _post_json(backtest_url, payload, timeout=max(config.request_timeout, 1800))
   if not resp.ok:
     logger.error(
@@ -740,7 +752,7 @@ def run_backtest_step(config: WorkflowConfig, note: str | None = None) -> dict:
     )
   data = resp.json()
   requested = data.get("data", {}).get("requested_strategies", []) or []
-  logger.info("[BACKTEST] ok run_mode=all requested_strategies=%s", requested)
+  logger.info("[BACKTEST] ok run_mode=batch requested_strategies=%s", requested)
   logger.debug("[BACKTEST] response=%s", json.dumps(data, ensure_ascii=False)[:4000])
 
   return data

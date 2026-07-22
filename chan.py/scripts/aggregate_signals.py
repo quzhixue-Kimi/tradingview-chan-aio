@@ -23,20 +23,20 @@ import csv
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 STRATEGIES = [
-  (
-    "v5_macdtd",
-    BASE_DIR
-    / "user_strategy_v5_macdtd"
-    / "results"
-    / "market_signal_digest_last_per_symbol_v5_macdtd.csv",
-  ),
-  (
-    "v6_bspzs",
-    BASE_DIR
-    / "user_strategy_v6_bspzs"
-    / "results"
-    / "market_trading_signal_digest_last_per_symbol_v6_bspzs.csv",
-  ),
+  #  (
+  #    "v5_macdtd",
+  #    BASE_DIR
+  #    / "user_strategy_v5_macdtd"
+  #    / "results"
+  #    / "market_signal_digest_last_per_symbol_v5_macdtd.csv",
+  #  ),
+  #  (
+  #    "v6_bspzs",
+  #    BASE_DIR
+  #    / "user_strategy_v6_bspzs"
+  #    / "results"
+  #    / "market_trading_signal_digest_last_per_symbol_v6_bspzs.csv",
+  #  ),
   (
     "v7_bi",
     BASE_DIR
