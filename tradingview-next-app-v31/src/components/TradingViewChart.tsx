@@ -58,6 +58,9 @@ declare global {
     resolution(): string;
     getVisibleRange?: () => { from: number; to: number } | null;
     createStudy?: (...args: any[]) => Promise<any> | any;
+    getStudyById?: (entityId: string | number) => {
+      setVisible: (visible: boolean) => void;
+    };
     createShape(point: any, options?: any): any;
     createMultipointShape?: (points: any[], options?: any) => any;
     removeEntity?: (entityId: string | number) => void;
@@ -508,6 +511,28 @@ export default function TradingViewChart({
       setIsLoading(false);
 
       const chart = widget!.chart();
+      const dailyMaStudyIds: Array<string | number> = [];
+
+      const isDailyResolution = () => {
+        const resolution = chart.resolution();
+        return resolution === "D" || resolution === "1D";
+      };
+
+      const updateDailyMaVisibility = () => {
+        if (!chart.getStudyById) return;
+
+        const visible = isDailyResolution();
+        dailyMaStudyIds.forEach((id) => {
+          try {
+            chart.getStudyById?.(id).setVisible(visible);
+          } catch (e) {
+            console.error("[Daily MA Study] visibility update failed", {
+              id,
+              error: e,
+            });
+          }
+        });
+      };
 
       const createMaStudies = async (cht: typeof chart) => {
         const addMA = async (
@@ -541,7 +566,42 @@ export default function TradingViewChart({
         await addMA(250, "rgb(187, 17, 1)", 4);
       };
 
+      const createDailyMaStudies = async (cht: typeof chart) => {
+        const addDailyMA = async (
+          length: number,
+          color: string,
+          lineWidth: number,
+        ) => {
+          try {
+            const studyId = await cht.createStudy?.(
+              "Moving Average",
+              true,
+              false,
+              {
+                length,
+                source: "close",
+              },
+              {
+                "Plot.color": color,
+                "Plot.linewidth": lineWidth,
+              },
+            );
+
+            if (studyId != null) {
+              dailyMaStudyIds.push(studyId);
+            }
+          } catch (e) {
+            console.error("[Daily MA Study] failed", { length, error: e });
+          }
+        };
+
+        await addDailyMA(5, "rgb(255, 152, 0)", 2);
+        await addDailyMA(20, "rgb(158, 158, 158)", 2);
+        updateDailyMaVisibility();
+      };
+
       void createMaStudies(chart);
+      void createDailyMaStudies(chart);
 
       const clearShapes = (idsRef: React.MutableRefObject<DrawnShapeId[]>) => {
         const ids = idsRef.current;
@@ -848,7 +908,12 @@ export default function TradingViewChart({
         const idxToTime = buildIdxToTimeMap(patterns.raw_kline_list, isCrypto);
 
         for (const bsp of patterns.bsp_list || []) {
-          const ts = getTimeByKluIdx(idxToTime, bsp.klu_idx, bsp.time, isCrypto);
+          const ts = getTimeByKluIdx(
+            idxToTime,
+            bsp.klu_idx,
+            bsp.time,
+            isCrypto,
+          );
           if (ts == null || bsp.price == null) continue;
 
           try {
@@ -1186,6 +1251,7 @@ export default function TradingViewChart({
           clearShapes(td9BspShapeIdsRef);
           clearShapes(pivotSrShapeIdsRef);
           datafeedRef.current?.clearCache();
+          updateDailyMaVisibility();
         });
       }
 
