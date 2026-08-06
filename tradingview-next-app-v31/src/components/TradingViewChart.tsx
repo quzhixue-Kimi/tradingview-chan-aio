@@ -12,6 +12,7 @@ import { isCryptoSymbol, parseTimeToUnixMs } from "@/lib/utils";
 const TV_CONTAINER_ID = "tv_chart_container";
 const TD9_BSP_STUDY_NAME = "TD9 Labels BSP List";
 const PIVOT_SR_STUDY_NAME = "Pivot S/R Zones";
+const MAR_STUDY_NAME = "MAR";
 const STUDY_POLL_MS = 800;
 
 declare global {
@@ -415,6 +416,92 @@ function buildPivotSrIndicator(PineJS: any) {
   };
 }
 
+function buildMarIndicator(PineJS: any) {
+  const maDefinitions = [
+    { id: "ma5", title: "MA5", length: 5, color: "rgb(255, 152, 0)", linewidth: 2 },
+    { id: "ma20", title: "MA20", length: 20, color: "rgb(158, 158, 158)", linewidth: 2 },
+    { id: "ma55", title: "MA55", length: 55, color: "rgb(239, 49, 49)", linewidth: 1 },
+    { id: "ma60", title: "MA60", length: 60, color: "rgb(255, 255, 255)", linewidth: 1 },
+    { id: "ma65", title: "MA65", length: 65, color: "rgb(102, 187, 106)", linewidth: 1 },
+    { id: "ma120", title: "MA120", length: 120, color: "rgb(180, 44, 194)", linewidth: 3 },
+    { id: "ma250", title: "MA250", length: 250, color: "rgb(187, 17, 1)", linewidth: 4 },
+  ];
+
+  const styles = Object.fromEntries(
+    maDefinitions.map((ma) => [
+      ma.id,
+      {
+        title: ma.title,
+        histogramBase: 0,
+        joinPoints: false,
+      },
+    ]),
+  );
+
+  const defaultStyles = Object.fromEntries(
+    maDefinitions.map((ma) => [
+      ma.id,
+      {
+        linestyle: 0,
+        linewidth: ma.linewidth,
+        plottype: 0,
+        trackPrice: false,
+        transparency: 0,
+        visible: true,
+        color: ma.color,
+      },
+    ]),
+  );
+
+  return {
+    name: MAR_STUDY_NAME,
+    metainfo: {
+      _metainfoVersion: 53,
+      id: "mar@tv-basicstudies-1",
+      description: MAR_STUDY_NAME,
+      shortDescription: MAR_STUDY_NAME,
+      isCustomIndicator: true,
+      is_price_study: true,
+      is_hidden_study: false,
+      isTVScript: false,
+      isTVScriptStub: false,
+      format: {
+        type: "inherit",
+      },
+      plots: maDefinitions.map((ma) => ({
+        id: ma.id,
+        type: "line",
+      })),
+      styles,
+      defaults: {
+        styles: defaultStyles,
+        precision: 2,
+        inputs: {},
+      },
+      inputs: [],
+    },
+    constructor: function (this: any) {
+      this.main = function (context: any) {
+        this._context = context;
+        context.setMinimumAdditionalDepth?.(250);
+
+        const close = PineJS.Std.close(context);
+        const closeSeries = context.new_var(close);
+        const period = String(PineJS.Std.period(context) || "").toUpperCase();
+        const isDaily =
+          period === "D" || period === "1D" || PineJS.Std.isdwm?.(context);
+
+        return maDefinitions.map((ma) => {
+          if ((ma.length === 5 || ma.length === 20) && !isDaily) {
+            return NaN;
+          }
+          return PineJS.Std.sma(closeSeries, ma.length, context);
+        });
+      };
+    },
+  };
+}
+
 export default function TradingViewChart({
   initialSymbol,
   initialInterval,
@@ -494,7 +581,11 @@ export default function TradingViewChart({
         symbol_search_request_delay: 0,
         debug: true,
         custom_indicators_getter: async (PineJS: any) => {
-          return [buildTd9BspIndicator(PineJS), buildPivotSrIndicator(PineJS)];
+          return [
+            buildTd9BspIndicator(PineJS),
+            buildPivotSrIndicator(PineJS),
+            buildMarIndicator(PineJS),
+          ];
         },
       });
 
@@ -511,97 +602,58 @@ export default function TradingViewChart({
       setIsLoading(false);
 
       const chart = widget!.chart();
-      const dailyMaStudyIds: Array<string | number> = [];
+      let macdStudyId: string | number | null = null;
+      let volumeStudyId: string | number | null = null;
 
       const isDailyResolution = () => {
         const resolution = chart.resolution();
         return resolution === "D" || resolution === "1D";
       };
 
-      const updateDailyMaVisibility = () => {
-        if (!chart.getStudyById) return;
+      const removeStudy = (studyId: string | number | null) => {
+        if (studyId == null) return;
 
-        const visible = isDailyResolution();
-        dailyMaStudyIds.forEach((id) => {
-          try {
-            chart.getStudyById?.(id).setVisible(visible);
-          } catch (e) {
-            console.error("[Daily MA Study] visibility update failed", {
-              id,
-              error: e,
-            });
-          }
-        });
+        try {
+          chart.removeEntity?.(studyId);
+        } catch (e) {
+          console.error("[Study] remove failed", { studyId, error: e });
+        }
       };
 
-      const createMaStudies = async (cht: typeof chart) => {
-        const addMA = async (
-          length: number,
-          color: string,
-          lineWidth: number,
-        ) => {
-          try {
-            await cht.createStudy?.(
-              "Moving Average",
-              true,
-              false,
-              {
-                length,
-                source: "close",
-              },
-              {
-                "Plot.color": color,
-                "Plot.linewidth": lineWidth,
-              },
-            );
-          } catch (e) {
-            console.error("[MA Study] failed", { length, error: e });
-          }
-        };
+      const ensureMacdStudy = async () => {
+        if (macdStudyId != null) return;
 
-        await addMA(55, "rgb(239, 49, 49)", 1);
-        await addMA(60, "rgb(255, 255, 255)", 1);
-        await addMA(65, "rgb(102, 187, 106)", 1);
-        await addMA(120, "rgb(180, 44, 194)", 3);
-        await addMA(250, "rgb(187, 17, 1)", 4);
+        try {
+          const studyId = await chart.createStudy?.("MACD", false, false);
+          if (studyId != null) {
+            macdStudyId = studyId;
+          }
+        } catch (e) {
+          console.error("[MACD Study] failed", e);
+        }
       };
 
-      const createDailyMaStudies = async (cht: typeof chart) => {
-        const addDailyMA = async (
-          length: number,
-          color: string,
-          lineWidth: number,
-        ) => {
-          try {
-            const studyId = await cht.createStudy?.(
-              "Moving Average",
-              true,
-              false,
-              {
-                length,
-                source: "close",
-              },
-              {
-                "Plot.color": color,
-                "Plot.linewidth": lineWidth,
-              },
-            );
+      const syncVolumeStudy = async () => {
+        if (isDailyResolution()) {
+          if (volumeStudyId != null) return;
 
+          try {
+            const studyId = await chart.createStudy?.("Volume", false, false);
             if (studyId != null) {
-              dailyMaStudyIds.push(studyId);
+              volumeStudyId = studyId;
             }
           } catch (e) {
-            console.error("[Daily MA Study] failed", { length, error: e });
+            console.error("[Volume Study] failed", e);
           }
-        };
+          return;
+        }
 
-        await addDailyMA(5, "rgb(255, 152, 0)", 2);
-        await addDailyMA(20, "rgb(158, 158, 158)", 2);
-        updateDailyMaVisibility();
+        removeStudy(volumeStudyId);
+        volumeStudyId = null;
       };
 
-      void createMaStudies(chart);
-      void createDailyMaStudies(chart);
+      void ensureMacdStudy();
+      void syncVolumeStudy();
 
       const clearShapes = (idsRef: React.MutableRefObject<DrawnShapeId[]>) => {
         const ids = idsRef.current;
@@ -1251,7 +1303,7 @@ export default function TradingViewChart({
           clearShapes(td9BspShapeIdsRef);
           clearShapes(pivotSrShapeIdsRef);
           datafeedRef.current?.clearCache();
-          updateDailyMaVisibility();
+          void syncVolumeStudy();
         });
       }
 
