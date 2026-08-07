@@ -633,27 +633,37 @@ export default function TradingViewChart({
         }
       };
 
-      const syncVolumeStudy = async () => {
-        if (isDailyResolution()) {
-          if (volumeStudyId != null) return;
+      const ensureVolumeStudy = async () => {
+        if (volumeStudyId != null) return;
 
-          try {
-            const studyId = await chart.createStudy?.("Volume", false, false);
-            if (studyId != null) {
-              volumeStudyId = studyId;
-            }
-          } catch (e) {
-            console.error("[Volume Study] failed", e);
+        try {
+          const studyId = await chart.createStudy?.("Volume", false, false);
+          if (studyId != null) {
+            volumeStudyId = studyId;
           }
+        } catch (e) {
+          console.error("[Volume Study] failed", e);
+        }
+      };
+
+      const syncStudiesForResolution = async () => {
+        if (isDailyResolution()) {
+          if (macdStudyId != null) {
+            removeStudy(macdStudyId);
+            macdStudyId = null;
+          }
+
+          await ensureVolumeStudy();
+          await ensureMacdStudy();
           return;
         }
 
         removeStudy(volumeStudyId);
         volumeStudyId = null;
+        await ensureMacdStudy();
       };
 
-      void ensureMacdStudy();
-      void syncVolumeStudy();
+      void syncStudiesForResolution();
 
       const clearShapes = (idsRef: React.MutableRefObject<DrawnShapeId[]>) => {
         const ids = idsRef.current;
@@ -1303,7 +1313,7 @@ export default function TradingViewChart({
           clearShapes(td9BspShapeIdsRef);
           clearShapes(pivotSrShapeIdsRef);
           datafeedRef.current?.clearCache();
-          void syncVolumeStudy();
+          void syncStudiesForResolution();
         });
       }
 
