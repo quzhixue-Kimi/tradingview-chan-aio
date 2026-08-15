@@ -17,7 +17,7 @@ import pandas as pd
 import requests
 from zoneinfo import ZoneInfo
 
-from trade_system.notifiers.telegram import telegram_send_message
+from email_notify import send_email
 
 try:
   from apscheduler.schedulers.blocking import BlockingScheduler
@@ -372,19 +372,20 @@ def send_digest_telegram(
   sent = []
   now_utc = datetime.utcnow().isoformat(timespec="seconds") + "Z"
   for row, msg in zip(filtered_rows, messages):
-    data = telegram_send_message(
-      chat_id=None,
-      text=msg,
-      parse_mode=None,
-      disable_web_page_preview=True,
-    )
-    result = data.get("result", {})
+    subject_parts = ["缠论信号", strategy_id]
+    symbol = str(row.get("symbol", "") or "").strip()
+    event_type = str(row.get("event_type", "") or "").strip()
+    if symbol:
+      subject_parts.append(symbol)
+    if event_type:
+      subject_parts.append(event_type)
+    data = send_email(" - ".join(subject_parts), msg)
     sent.append(
       {
-        "message_id": result.get("message_id"),
-        "text": result.get("text"),
-        "chat": result.get("chat", {}),
-        "date": result.get("date"),
+        "message_id": data.get("id"),
+        "text": msg,
+        "chat": {},
+        "date": None,
         "dedup_key": row.get("dedup_key"),
       }
     )
@@ -689,7 +690,6 @@ def run_pivot_sr_step(config: WorkflowConfig) -> dict:
 def _push_queue_to_telegram(config: WorkflowConfig):
   try:
     import db
-    from trade_system.notifiers.telegram import telegram_send_message
 
     queue = db.load_queue_today_from_db()
     signals = queue.get("signals", [])
@@ -719,7 +719,7 @@ def _push_queue_to_telegram(config: WorkflowConfig):
           f"{action_emoji} {sig.get('symbol', 'N/A')} {sig.get('action', 'N/A')} {sig.get('strategy', '')} {sig.get('period', '')} {sig.get('event_time', '')}"
         )
       msg = "📋 交易队列生成完成\n" + "\n".join(lines)
-      telegram_send_message(msg)
+      send_email("缠论交易队列生成完成", msg)
     logger.info("[QUEUE-PUSH] telegram推送成功")
   except Exception as e:
     logger.exception("[QUEUE-PUSH] telegram推送异常: %s", e)
