@@ -618,10 +618,38 @@ function routePriceTick(message: TwelveWebSocketMessage): void {
     !Number.isFinite(timestampSeconds) ||
     !Number.isFinite(price)
   ) {
+    console.warn("[Twelve Data WS] invalid price tick ignored", {
+      receivedAt: new Date().toISOString(),
+      event: message.event,
+      symbol: message.symbol,
+      timestamp: message.timestamp,
+      price: message.price,
+      dayVolume: message.day_volume,
+      rawMessage: message,
+    });
     return;
   }
 
   const tickTimeMs = timestampSeconds * 1_000;
+  const tickNewYork = DateTime.fromMillis(tickTimeMs, { zone: "utc" }).setZone(
+    NY_TZ,
+  );
+  const isRth = isUsRthBar(tickTimeMs);
+
+  console.info("[Twelve Data WS] price received", {
+    receivedAt: new Date().toISOString(),
+    browserTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    symbol,
+    price,
+    rawTimestampSeconds: timestampSeconds,
+    tickTimeMs,
+    tickUtc: new Date(tickTimeMs).toISOString(),
+    tickNewYork: tickNewYork.isValid
+      ? tickNewYork.toFormat("yyyy-LL-dd HH:mm:ss ZZZZ")
+      : "INVALID",
+    isRth,
+    dayVolume: message.day_volume,
+  });
 
   /**
    * 你的业务规则：
@@ -630,9 +658,19 @@ function routePriceTick(message: TwelveWebSocketMessage): void {
    *
    * 盘前、盘后、夜盘、周末全部忽略。
    */
-  if (!isUsRthBar(tickTimeMs)) {
+  if (!isRth) {
+    console.info("[Twelve Data WS] tick ignored: outside RTH", {
+      symbol,
+      price,
+      tickUtc: new Date(tickTimeMs).toISOString(),
+      tickNewYork: tickNewYork.isValid
+        ? tickNewYork.toFormat("yyyy-LL-dd HH:mm:ss ZZZZ")
+        : "INVALID",
+    });
     return;
   }
+
+  let matchedStreamCount = 0;
 
   for (const [streamKey, subscriptions] of streamSubscriptions) {
     const firstSubscription = subscriptions[0];
@@ -640,6 +678,8 @@ function routePriceTick(message: TwelveWebSocketMessage): void {
     if (!firstSubscription || firstSubscription.symbol !== symbol) {
       continue;
     }
+
+    matchedStreamCount += 1;
 
     for (const subscription of subscriptions) {
       subscription.lastBar = updateBarWithTick(
@@ -689,6 +729,16 @@ function routePriceTick(message: TwelveWebSocketMessage): void {
      */
     void streamKey;
   }
+
+  if (matchedStreamCount === 0) {
+    console.warn("[Twelve Data WS] RTH tick has no matching active stream", {
+      symbol,
+      price,
+      tickUtc: new Date(tickTimeMs).toISOString(),
+      tickNewYork: tickNewYork.toFormat("yyyy-LL-dd HH:mm:ss ZZZZ"),
+      activeSymbols: getActiveSymbols(),
+    });
+  }
 }
 
 function flushRealtimeBars(): void {
@@ -699,6 +749,24 @@ function flushRealtimeBars(): void {
       }
 
       try {
+        console.info("[TradingView] realtime bar flushed", {
+          flushedAt: new Date().toISOString(),
+          symbol: subscription.symbol,
+          resolution: subscription.resolution,
+          barTimeMs: subscription.lastBar.time,
+          barTimeUtc: new Date(subscription.lastBar.time).toISOString(),
+          barTimeNewYork: DateTime.fromMillis(subscription.lastBar.time, {
+            zone: "utc",
+          })
+            .setZone(NY_TZ)
+            .toFormat("yyyy-LL-dd HH:mm:ss ZZZZ"),
+          open: subscription.lastBar.open,
+          high: subscription.lastBar.high,
+          low: subscription.lastBar.low,
+          close: subscription.lastBar.close,
+          volume: subscription.lastBar.volume,
+        });
+
         subscription.callback(subscription.lastBar);
         subscription.isDirty = false;
       } catch (error) {
