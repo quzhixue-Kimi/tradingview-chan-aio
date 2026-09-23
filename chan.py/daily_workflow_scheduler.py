@@ -17,6 +17,7 @@ import pandas as pd
 import requests
 from zoneinfo import ZoneInfo
 
+from discord_notify import send_discord_message
 from email_notify import send_email
 
 try:
@@ -379,10 +380,11 @@ def send_digest_telegram(
       subject_parts.append(symbol)
     if event_type:
       subject_parts.append(event_type)
-    data = send_email(" - ".join(subject_parts), msg)
+    email_data = send_email(" - ".join(subject_parts), msg)
+    send_discord_message(msg)
     sent.append(
       {
-        "message_id": data.get("id"),
+        "message_id": email_data.get("id"),
         "text": msg,
         "chat": {},
         "date": None,
@@ -720,6 +722,7 @@ def _push_queue_to_telegram(config: WorkflowConfig):
         )
       msg = "📋 交易队列生成完成\n" + "\n".join(lines)
       send_email("缠论交易队列生成完成", msg)
+      send_discord_message(msg)
     logger.info("[QUEUE-PUSH] telegram推送成功")
   except Exception as e:
     logger.exception("[QUEUE-PUSH] telegram推送异常: %s", e)
