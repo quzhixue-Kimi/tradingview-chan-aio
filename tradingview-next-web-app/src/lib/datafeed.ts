@@ -1106,7 +1106,11 @@ export function createTwelveDatafeed() {
           }
 
           const tvBars = filterUsRthBars(
-            await fetchTvHistory(symbol, resolution, periodParams.countBack),
+            await fetchTvHistory(
+              symbol,
+              resolution,
+              Math.max(periodParams.countBack, DEFAULT_HISTORY_BARS),
+            ),
           );
 
           console.info("[TV WS bars]", {

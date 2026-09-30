@@ -8,6 +8,7 @@ import {
   type SupportedResolution,
 } from "@/lib/datafeed";
 import { createLadderMaIndicator } from "@/lib/indicators/ladder-ma";
+import { createMarIndicator } from "@/lib/indicators/mar";
 import {
   CHAN_THEORY_STUDY_NAME,
   createChanTheoryPlaceholder,
@@ -156,6 +157,7 @@ export default function TradingViewChart({
         custom_indicators_getter: (PineJS: unknown) => {
           return Promise.resolve([
             createLadderMaIndicator(PineJS as never),
+            createMarIndicator(PineJS as never),
             createChanTheoryPlaceholder(PineJS as never),
             createPivotSrPlaceholder(PineJS as never),
           ]);

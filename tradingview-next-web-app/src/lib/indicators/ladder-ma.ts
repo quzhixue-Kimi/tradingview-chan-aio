@@ -24,15 +24,12 @@ type StudyInstance = {
   main: (context: PineContext, inputCallback: InputCallback) => number[];
 };
 
+// 名称和 ID 保持不变，TradingViewChart.tsx 里的 createStudy("Realtime Ladder + MA") 无需修改。
 const STUDY_NAME = "Realtime Ladder + MA";
 const STUDY_ID = "Realtime Ladder + MA@tv-basicstudies-1";
 
 const BLUE = "#2962FF";
 const YELLOW = "#F5C400";
-const RED = "#FF3B4E";
-const WHITE = "#FFFFFF";
-const GREEN = "#40C057";
-const PURPLE = "#A23CCB";
 
 const BLUE_FILL = "rgba(41, 98, 255, 0.24)";
 const YELLOW_FILL = "rgba(245, 196, 0, 0.20)";
@@ -101,63 +98,13 @@ export function createLadderMaIndicator(PineJS: PineJSLike) {
             visible: true,
             color: YELLOW,
           },
-
-          ma55: {
-            linestyle: 0,
-            linewidth: 2,
-            plottype: 0,
-            trackPrice: false,
-            transparency: 0,
-            visible: true,
-            color: RED,
-          },
-
-          ma60: {
-            linestyle: 0,
-            linewidth: 2,
-            plottype: 0,
-            trackPrice: false,
-            transparency: 0,
-            visible: true,
-            color: WHITE,
-          },
-
-          ma65: {
-            linestyle: 0,
-            linewidth: 2,
-            plottype: 0,
-            trackPrice: false,
-            transparency: 0,
-            visible: true,
-            color: GREEN,
-          },
-
-          ma120: {
-            linestyle: 0,
-            linewidth: 4,
-            plottype: 0,
-            trackPrice: false,
-            transparency: 0,
-            visible: true,
-            color: PURPLE,
-          },
-
-          ma250: {
-            linestyle: 0,
-            linewidth: 6,
-            plottype: 0,
-            trackPrice: false,
-            transparency: 0,
-            visible: true,
-            color: RED,
-          },
         },
 
         /**
          * filledAreasStyle 的 key 必须和 filledAreas 中的 id 相同。
          *
          * transparency:
-         * 0   = 完全不透明
+         * 0 = 完全不透明
          * 100 = 完全透明
          */
         filledAreasStyle: {
@@ -180,57 +127,17 @@ export function createLadderMaIndicator(PineJS: PineJSLike) {
 
           yellowHighLength: 89,
           yellowLowLength: 90,
-
-          ma55Length: 55,
-          ma60Length: 60,
-          ma65Length: 65,
-          ma120Length: 120,
-          ma250Length: 250,
         },
       },
 
       plots: [
-        {
-          id: "blueUpper",
-          type: "line",
-        },
-        {
-          id: "blueLower",
-          type: "line",
-        },
-        {
-          id: "yellowUpper",
-          type: "line",
-        },
-        {
-          id: "yellowLower",
-          type: "line",
-        },
-        {
-          id: "ma55",
-          type: "line",
-        },
-        {
-          id: "ma60",
-          type: "line",
-        },
-        {
-          id: "ma65",
-          type: "line",
-        },
-        {
-          id: "ma120",
-          type: "line",
-        },
-        {
-          id: "ma250",
-          type: "line",
-        },
+        { id: "blueUpper", type: "line" },
+        { id: "blueLower", type: "line" },
+        { id: "yellowUpper", type: "line" },
+        { id: "yellowLower", type: "line" },
       ],
 
       /**
-       * 这两个定义就是新增的核心。
-       *
        * type: "plot_plot"
        * 表示把两个 plot 之间的面积填充。
        */
@@ -252,33 +159,10 @@ export function createLadderMaIndicator(PineJS: PineJSLike) {
       ],
 
       styles: {
-        blueUpper: {
-          title: "Blue EMA High 24",
-        },
-        blueLower: {
-          title: "Blue EMA Low 23",
-        },
-        yellowUpper: {
-          title: "Yellow EMA High 89",
-        },
-        yellowLower: {
-          title: "Yellow EMA Low 90",
-        },
-        ma55: {
-          title: "MA55",
-        },
-        ma60: {
-          title: "MA60",
-        },
-        ma65: {
-          title: "MA65",
-        },
-        ma120: {
-          title: "MA120",
-        },
-        ma250: {
-          title: "MA250",
-        },
+        blueUpper: { title: "Blue EMA High 24" },
+        blueLower: { title: "Blue EMA Low 23" },
+        yellowUpper: { title: "Yellow EMA High 89" },
+        yellowLower: { title: "Yellow EMA Low 90" },
       },
 
       inputs: [
@@ -310,41 +194,6 @@ export function createLadderMaIndicator(PineJS: PineJSLike) {
           defval: 90,
           min: 1,
         },
-        {
-          id: "ma55Length",
-          name: "MA55 Length",
-          type: "integer",
-          defval: 55,
-          min: 1,
-        },
-        {
-          id: "ma60Length",
-          name: "MA60 Length",
-          type: "integer",
-          defval: 60,
-          min: 1,
-        },
-        {
-          id: "ma65Length",
-          name: "MA65 Length",
-          type: "integer",
-          defval: 65,
-          min: 1,
-        },
-        {
-          id: "ma120Length",
-          name: "MA120 Length",
-          type: "integer",
-          defval: 120,
-          min: 1,
-        },
-        {
-          id: "ma250Length",
-          name: "MA250 Length",
-          type: "integer",
-          defval: 250,
-          min: 1,
-        },
       ],
     },
 
@@ -364,8 +213,6 @@ export function createLadderMaIndicator(PineJS: PineJSLike) {
 
         const lowSeries = context.new_var(PineJS.Std.low(context));
 
-        const closeSeries = context.new_var(PineJS.Std.close(context));
-
         const blueUpper = PineJS.Std.ema(highSeries, inputCallback(0), context);
 
         const blueLower = PineJS.Std.ema(lowSeries, inputCallback(1), context);
@@ -382,27 +229,7 @@ export function createLadderMaIndicator(PineJS: PineJSLike) {
           context,
         );
 
-        const ma55 = PineJS.Std.sma(closeSeries, inputCallback(4), context);
-
-        const ma60 = PineJS.Std.sma(closeSeries, inputCallback(5), context);
-
-        const ma65 = PineJS.Std.sma(closeSeries, inputCallback(6), context);
-
-        const ma120 = PineJS.Std.sma(closeSeries, inputCallback(7), context);
-
-        const ma250 = PineJS.Std.sma(closeSeries, inputCallback(8), context);
-
-        return [
-          blueUpper,
-          blueLower,
-          yellowUpper,
-          yellowLower,
-          ma55,
-          ma60,
-          ma65,
-          ma120,
-          ma250,
-        ];
+        return [blueUpper, blueLower, yellowUpper, yellowLower];
       };
     },
   };
