@@ -7,13 +7,23 @@ import {
   RTH_SESSION,
   type OhlcvBar,
 } from "./market-session";
+import { fetchTvHistory, subscribeTvBars, unsubscribeTvBars } from "./tv-ws-feed";
 
-export const SUPPORTED_RESOLUTIONS = ["1", "5", "15", "30", "60"] as const;
+// [3m] 新增 "3"：3 分钟走 tv-ws-server（TradingView-API），其余周期仍走 Twelve Data。
+export const SUPPORTED_RESOLUTIONS = ["1", "3", "5", "15", "30", "60"] as const;
 
 export type SupportedResolution = (typeof SUPPORTED_RESOLUTIONS)[number];
 
+// [3m] 由 tv-ws-server 提供数据的周期
+export const TV_FEED_RESOLUTIONS = ["3"] as const;
+
+export type TvFeedResolution = (typeof TV_FEED_RESOLUTIONS)[number];
+
+// [3m] 由 Twelve Data 提供数据的周期
+export type TwelveResolution = Exclude<SupportedResolution, TvFeedResolution>;
+
 export const TWELVE_INTERVAL_BY_RESOLUTION: Record<
-  SupportedResolution,
+  TwelveResolution,
   "1min" | "5min" | "15min" | "30min" | "1h"
 > = {
   "1": "1min",
@@ -25,6 +35,7 @@ export const TWELVE_INTERVAL_BY_RESOLUTION: Record<
 
 export const RESOLUTION_LABELS: Record<SupportedResolution, string> = {
   "1": "1m",
+  "3": "3m",
   "5": "5m",
   "15": "15m",
   "30": "30m",
@@ -35,6 +46,13 @@ export function isSupportedResolution(
   resolution: string,
 ): resolution is SupportedResolution {
   return SUPPORTED_RESOLUTIONS.includes(resolution as SupportedResolution);
+}
+
+// [3m]
+export function isTvFeedResolution(
+  resolution: SupportedResolution,
+): resolution is TvFeedResolution {
+  return TV_FEED_RESOLUTIONS.includes(resolution as TvFeedResolution);
 }
 
 type TwelveDataRow = {
@@ -142,7 +160,7 @@ type SearchSymbolResult = {
 type RealtimeSubscription = {
   id: string;
   symbol: string;
-  resolution: SupportedResolution;
+  resolution: TwelveResolution;
   callback: RealtimeCallback;
   onResetCacheNeededCallback?: ResetCacheCallback;
   lastBar: TradingViewBar | null;
@@ -193,6 +211,8 @@ const barCache = new Map<string, TradingViewBar[]>();
  *
  * 同一个 symbol + resolution 可共享一条 Twelve Data symbol subscription，
  * 但为每个 Charting Library subscriber 保存独立 lastBar 和 callback。
+ *
+ * [3m] 仅 Twelve Data 周期使用；3 分钟由 tv-ws-feed.ts 自行管理订阅。
  */
 const streamSubscriptions = new Map<string, RealtimeSubscription[]>();
 
@@ -284,7 +304,7 @@ function getRequestedOutputSize(countBack: number): number {
 
 async function fetchTwelveBars(
   symbol: string,
-  resolution: SupportedResolution,
+  resolution: TwelveResolution,
   countBack: number,
 ): Promise<TradingViewBar[]> {
   const apiKey = getApiKey();
@@ -909,7 +929,7 @@ function ensureSocket(): void {
 
 function subscribeToRealtimeStream(
   symbol: string,
-  resolution: SupportedResolution,
+  resolution: TwelveResolution,
   callback: RealtimeCallback,
   subscriberUID: string,
   onResetCacheNeededCallback?: ResetCacheCallback,
@@ -1045,13 +1065,15 @@ export function createTwelveDatafeed() {
       onSymbolResolvedCallback: (symbolInfo: SymbolInfo) => void,
       onResolveErrorCallback: (reason: string) => void,
     ): void {
-      try {
-        onSymbolResolvedCallback(makeSymbolInfo(symbolName));
-      } catch (error) {
-        onResolveErrorCallback(
-          error instanceof Error ? error.message : String(error),
-        );
-      }
+        window.setTimeout(() => {
+        try {
+          onSymbolResolvedCallback(makeSymbolInfo(symbolName));
+        } catch (error) {
+          onResolveErrorCallback(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      }, 0);
     },
 
     async getBars(
@@ -1071,6 +1093,37 @@ export function createTwelveDatafeed() {
         }
 
         const symbol = normalizeSymbol(symbolInfo.ticker);
+
+        // [3m] 3 分钟：走 tv-ws-server（TradingView-API）
+        if (isTvFeedResolution(resolution)) {
+          /**
+           * 服务端目前只提供最近 N 根，不支持向左翻页。
+           * 图表滚动到最左侧会发起非首次请求，直接告知没有更多历史。
+           */
+          if (!periodParams.firstDataRequest) {
+            onHistoryCallback([], { noData: true });
+            return;
+          }
+
+          const tvBars = filterUsRthBars(
+            await fetchTvHistory(symbol, resolution, periodParams.countBack),
+          );
+
+          console.info("[TV WS bars]", {
+            symbol,
+            resolution,
+            countBack: periodParams.countBack,
+            rthBarsReturned: tvBars.length,
+            firstDataRequest: periodParams.firstDataRequest,
+          });
+
+          onHistoryCallback(tvBars, {
+            noData: tvBars.length === 0,
+          });
+          return;
+        }
+
+        // 以下为 Twelve Data 周期（1/5/15/30/60），逻辑不变
         const cacheKey = getCacheKey(symbol, resolution);
 
         const bars = await fetchTwelveBars(
@@ -1100,8 +1153,10 @@ export function createTwelveDatafeed() {
     /**
      * Charting Library 在需要当前 symbol/resolution 实时 bar 时调用。
      *
-     * lastBar 来自 getBars() 写入的 barCache，
+     * Twelve 周期：lastBar 来自 getBars() 写入的 barCache，
      * WebSocket tick 通过 onRealtimeCallback 推入当前 chart。
+     *
+     * [3m] 3 分钟：直接转发 tv-ws-server 推送的最新 K 线。
      */
     subscribeBars(
       symbolInfo: SymbolInfo,
@@ -1126,6 +1181,23 @@ export function createTwelveDatafeed() {
         subscriberUID,
       });
 
+      // [3m]
+      if (isTvFeedResolution(resolution)) {
+        subscribeTvBars(
+          subscriberUID,
+          symbol,
+          resolution,
+          (bar) => {
+            // 双重保险：服务端已过滤，这里再保证只有 RTH 的 bar 进入图表
+            if (isUsRthBar(bar.time)) {
+              onRealtimeCallback(bar);
+            }
+          },
+          onResetCacheNeededCallback,
+        );
+        return;
+      }
+
       subscribeToRealtimeStream(
         symbol,
         resolution,
@@ -1140,6 +1212,8 @@ export function createTwelveDatafeed() {
         subscriberUID,
       });
 
+      // 两条通道各自忽略不属于自己的 subscriberUID
+      unsubscribeTvBars(subscriberUID);
       unsubscribeFromRealtimeStream(subscriberUID);
     },
   };

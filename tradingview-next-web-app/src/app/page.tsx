@@ -5,7 +5,7 @@ import type { SupportedResolution } from "@/lib/datafeed";
 
 export default function Home() {
   const symbol = "QQQ";
-  const interval: SupportedResolution = "5";
+  const interval: SupportedResolution = "3";
 
   return (
     <main
