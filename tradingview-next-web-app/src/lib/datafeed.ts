@@ -10,7 +10,7 @@ import {
 import { fetchTvHistory, subscribeTvBars, unsubscribeTvBars } from "./tv-ws-feed";
 
 // [3m] 新增 "3"：3 分钟走 tv-ws-server（TradingView-API），其余周期仍走 Twelve Data。
-export const SUPPORTED_RESOLUTIONS = ["1", "3", "5", "15", "30", "60"] as const;
+export const SUPPORTED_RESOLUTIONS = ["3", "15", "30", "60"] as const;
 
 export type SupportedResolution = (typeof SUPPORTED_RESOLUTIONS)[number];
 
@@ -24,19 +24,15 @@ export type TwelveResolution = Exclude<SupportedResolution, TvFeedResolution>;
 
 export const TWELVE_INTERVAL_BY_RESOLUTION: Record<
   TwelveResolution,
-  "1min" | "5min" | "15min" | "30min" | "1h"
+  "15min" | "30min" | "1h"
 > = {
-  "1": "1min",
-  "5": "5min",
   "15": "15min",
   "30": "30min",
   "60": "1h",
 };
 
 export const RESOLUTION_LABELS: Record<SupportedResolution, string> = {
-  "1": "1m",
   "3": "3m",
-  "5": "5m",
   "15": "15m",
   "30": "30m",
   "60": "1H",

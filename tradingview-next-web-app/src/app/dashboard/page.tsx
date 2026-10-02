@@ -5,7 +5,7 @@ import TradingViewDashboard from "@/components/TradingViewDashboard";
 
 export default function DashboardPage() {
   const [tvReady, setTvReady] = useState(false);
-  const [symbol, setSymbol] = useState("TSLA");
+  const [symbol, setSymbol] = useState("QQQ");
   const [interval] = useState("15");
 
   useEffect(() => {

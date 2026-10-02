@@ -204,7 +204,7 @@ function splitPolylineSegments(points: TvPoint[]): TvPoint[][] {
 }
 
 export default function TradingViewDashboard({
-  initialSymbol = "TSLA",
+  initialSymbol = "QQQ",
   initialInterval = "15",
   onSymbolChange,
 }: {
