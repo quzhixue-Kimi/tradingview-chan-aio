@@ -15,6 +15,7 @@
 //
 // …which is exactly what the addon's own playground does (repos/Vela-pinets, port 5192).
 import { VelaWorkspace } from '../src/workspace';
+import { PineWorkerEngine } from '@luxalgo/vela-pinets';
 import { TwelveDataProvider } from '../src/data/providers/twelvedata';
 import { addSampleMarks } from './marks';
 import { DemoEngine, DEMO_SCRIPTS } from './demo-engine';
@@ -36,8 +37,8 @@ const ws = new VelaWorkspace('#chart', {
     persist: 'vela-widget', // → 'vela-play:vela-widget' in devtools (the page's historical key)
     storage,
     providers: { twelvedata: () => new TwelveDataProvider(import.meta.env.VITE_TD_KEY || "YOUR_API_KEY_HERE") },
-    engines: { demo: () => new DemoEngine() }, // swap for `pine: () => new PineWorkerEngine()` (see the header)
-    defaultLanguage: 'demo', // scripts added without a `language` run on the engine above
+    engines: { demo: () => new DemoEngine(), pine: () => new PineWorkerEngine() }, // swap for `pine: () => new PineWorkerEngine()` (see the header)
+    defaultLanguage: 'pine', // scripts added without a `language` run on the Pine engine
     // No script manifest: the indicators dialog lists the built-in catalog only. Scripts
     // reach the chart through the Code panel below (or an `indicators` manifest — see the
     // commented option further down).
@@ -155,7 +156,15 @@ registerWidgetAction({
     run: (ctx) => {
         if (!codeDialog) {
             codeArea = document.createElement('textarea');
-            codeArea.value = DEMO_SCRIPTS.bands;
+            codeArea.value = `//@version=6
+indicator("RSI Strategy")
+
+rsi = ta.rsi(close, 14)
+sma = ta.sma(rsi, 10)
+
+plot(rsi, "RSI")
+plot(sma, "Signal")`;
+
             codeArea.spellcheck = false;
             codeArea.style.cssText =
                 'width:520px;max-width:80vw;height:220px;resize:vertical;background:var(--vela-surface-overlay);color:var(--vela-fg);border:1px solid var(--vela-border-soft);border-radius:var(--vela-radius-md);padding:10px;font:12px/1.5 ui-monospace,Consolas,monospace;outline:none;';

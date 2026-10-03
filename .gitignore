@@ -15,3 +15,6 @@ dist/
 *.log
 
 bun.lock
+
+dist-playground/
+.env.local
