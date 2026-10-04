@@ -205,100 +205,38 @@ async function runCode(ctx: WidgetContext): Promise<void> {
 
 ws.refreshActions();
 
-// ── EMA 20 demo — a Pine script on the page's OWN chart (the `pine` engine is
-// already registered above, so no second chart and no extra registration).
-void ws.chart.ready().then(() => {
-    const handle = ws.chart.addIndicator(
-        `
-        //@version=6
-indicator(title="BYTZ+NINE", shorttitle="NX+NINE", overlay=true, max_boxes_count=500)
-
-// 1. 蓝色通道 (短期/快通道)
-len_blue_high = input.int(24, title="蓝通道高价EMA长度", minval=1, group="通道设置")
-len_blue_low = input.int(23, title="蓝通道低价EMA长度", minval=1, group="通道设置")
-// 黄色通道 (长期/慢通道)
-len_yellow_high = input.int(89, title="黄通道高价EMA长度", minval=1, group="通道设置")
-len_yellow_low = input.int(90, title="黄通道低价EMA长度", minval=1, group="通道设置")
-
-// ----------- 2. 指标计算 (使用 EMA of High/Low) -----------
-A_blue = ta.ema(high, len_blue_high)
-B_blue = ta.ema(low, len_blue_low)
-A_yellow = ta.ema(high, len_yellow_high)
-B_yellow = ta.ema(low, len_yellow_low)
-
-// ----------- 3. 图表绘制与区域填充 -----------
-// 3.1 绘制和填充蓝色通道
-p_blue_up = plot(A_blue, color=color.new(color.blue, 0), title="蓝通道上沿")
-p_blue_down = plot(B_blue, color=color.new(color.blue, 0), title="蓝通道下沿")
-fill(p_blue_up, p_blue_down, color=(close > A_blue or close < B_blue) ? color.new(color.blue, 70) : color.new(color.blue, 100), title="蓝色通道填充")
-
-// 3.2 绘制和填充黄色通道
-p_yellow_up = plot(A_yellow, color=color.new(color.yellow, 0), title="黄通道上沿")
-p_yellow_down = plot(B_yellow, color=color.new(color.yellow, 0), title="黄通道下沿")
-fill(p_yellow_up, p_yellow_down, color=(close > A_yellow or close < B_yellow) ? color.new(color.yellow, 70) : color.new(color.yellow, 100), title="黄色通道填充")
-
-show_td = input.bool(true, title="显示神奇九转", group="神奇九转设置")
-var int td_up = 0 // 上升计数
-var int td_dn = 0 // 下降计数
-if close > close[4]
-    td_up := td_up + 1
-    td_dn := 0
-else
-    if close < close[4]
-        td_dn := td_dn + 1
-        td_up := 0
-    else
-        td_up := 0
-        td_dn := 0
-
-// 1. 处理上涨结构 (高位九转 - 1-8 紫色,9 绿色)
-if show_td and td_up == 9
-    for i = 0 to 8
-        num = 9 - i
-        textcolor_up = num == 9 ? color.green : color.new(#FF00FF, 0)
-        label.new(bar_index - i, na,
-             text=str.tostring(num),
-             color=color(na),
-             textcolor=textcolor_up,
-             style=label.style_none,
-             yloc=yloc.abovebar)
-// 1.1 处理上涨结构的当前bar部分计数 (5-8,全部紫色)
-if show_td and barstate.islast and td_up >= 5 and td_up < 9
-    for i = 0 to td_up - 1
-        num = td_up - i
-        textcolor_up_partial = color.new(#FF00FF, 0)
-        label.new(bar_index - i, na,
-             text=str.tostring(num),
-             color=color(na),
-             textcolor=textcolor_up_partial,
-             style=label.style_none,
-             yloc=yloc.abovebar)
-// 2. 处理下跌结构 (低位九转 - 1-8 绿色,9 紫色)
-if show_td and td_dn == 9
-    for i = 0 to 8
-        num = 9 - i
-        textcolor_dn = num == 9 ? color.new(#FF00FF, 0) : color.green
-        label.new(bar_index - i, na,
-             text=str.tostring(num),
-             color=color(na),
-             textcolor=textcolor_dn,
-             style=label.style_none,
-             yloc=yloc.belowbar)
-// 2.1 处理下跌结构的当前bar部分计数 (5-8,全部绿色)
-if show_td and barstate.islast and td_dn >= 5 and td_dn < 9
-    for i = 0 to td_dn - 1
-        num = td_dn - i
-        textcolor_dn_partial = color.green
-        label.new(bar_index - i, na,
-             text=str.tostring(num),
-             color=color(na),
-             textcolor=textcolor_dn_partial,
-             style=label.style_none,
-             yloc=yloc.belowbar)
-        `,
-        { language: 'pine' },
+void ws.chart.ready().then(async () => {
+  try {
+    const response = await fetch(
+      `${import.meta.env.BASE_URL}indicators/bytz-nine.pine`,
+      { cache: 'no-store' },
     );
-    handle.on('error', ({ error }) => console.error('[vela-dev] Indicators failed:', error.message));
+
+    if (!response.ok) {
+      throw new Error(`加载 Pine Script 失败：HTTP ${response.status}`);
+    }
+
+    const script = await response.text();
+
+    if (!script.trimStart().startsWith('//@version=')) {
+      throw new Error(
+        '返回内容不是 Pine Script，请检查静态文件路径',
+      );
+    }
+
+    const handle = ws.chart.addIndicator(script, {
+      language: 'pine',
+    });
+
+    handle.on('error', ({ error }) => {
+      console.error(
+        '[vela-dev] Indicators failed:',
+        error.message,
+      );
+    });
+  } catch (error) {
+    console.error('[vela-dev] 加载指标失败:', error);
+  }
 });
 
 // ── Execution-context listener demo — how host code intercepts Vela's engine context.
