@@ -2,9 +2,26 @@ import type { OHLCV } from '../../../core/model/ohlcv';
 import type { BarRange, SymbolInfo } from '../../../core/ports/MarketDataFeed';
 import type { DataProvider, ProviderInfo, SymbolDescriptor } from '../../../core/ports/DataProvider';
 import type { Unsubscribe } from '../../../core/util/types';
+import { RequestGate } from '../RequestGate';
 
 const REST = 'https://api.twelvedata.com';
 const WS = 'wss://ws.twelvedata.com/v1/quotes/price';
+
+/** Public REST shaping: a small concurrency cap + min-spacing keeps the sustained rate under ~8/min. */
+const REST_CONCURRENCY = 4;
+const REST_MIN_INTERVAL_MS = 8000;
+
+/** How many times a single request retries after a 429 before giving up. */
+const REQUEST_MAX_RETRIES = 4;
+/** Exponential-backoff base + jitter for a 429 retry when no Retry-After is given (ms). */
+const BACKOFF_BASE_MS = 600;
+const BACKOFF_JITTER_MS = 400;
+
+/** A `Retry-After` header (seconds) as ms, falling back to `fallbackMs` when absent/invalid. */
+function retryAfterMs(res: Response, fallbackMs: number): number {
+    const sec = Number(res.headers.get('retry-after'));
+    return Number.isFinite(sec) && sec > 0 ? sec * 1000 : fallbackMs;
+}
 
 /** Canonical timeframe → Twelve Data interval + bar duration. */
 const TF_TO_INTERVAL: Record<string, { iv: string; ms: number }> = {
@@ -155,6 +172,8 @@ export function mergeSymbols(...lists: readonly (readonly SymbolDescriptor[])[])
 export class TwelveDataProvider implements DataProvider {
     /** Cached symbol enumeration (the two catalogs are large; fetch once). */
     private symbolsPromise: Promise<SymbolDescriptor[]> | null = null;
+    /** Shared request gate: caps concurrency, spaces request starts, honors 429 backoff. */
+    private readonly gate = new RequestGate(REST_CONCURRENCY, REST_MIN_INTERVAL_MS);
 
     constructor(private readonly apiKey: string) {}
 
@@ -186,7 +205,7 @@ export class TwelveDataProvider implements DataProvider {
         const u = new URL(`${REST}/time_series`);
         u.searchParams.set('symbol', ticker);
         u.searchParams.set('interval', tf.iv);
-        u.searchParams.set('outputsize', String(Math.min(Math.max(range.limit ?? 500, 1), 5000)));
+        u.searchParams.set('outputsize', String(Math.min(Math.max(range.limit ?? 500, 1), 1000)));
         // UTC so {@link parseBarTime} can stamp `Z` without shifting exchange-local clocks.
         u.searchParams.set('timezone', 'UTC');
         u.searchParams.set('order', 'asc');
@@ -308,8 +327,26 @@ export class TwelveDataProvider implements DataProvider {
     }
 
     private async json(url: string | URL): Promise<Record<string, unknown>> {
-        const res = await fetch(url);
+        const res = await this.request(url);
         return (await res.json()) as Record<string, unknown>;
+    }
+
+    /**
+     * Issue one GET through the shared {@link gate} (concurrency + spacing), retrying after a 429
+     * (honoring `Retry-After`, else exponential backoff + jitter). Returns the `Response` so callers
+     * can read pagination headers (`cb-after`) before consuming the body.
+     */
+    private async request(url: string | URL): Promise<Response> {
+        for (let attempt = 0; ; attempt += 1) {
+            const res = await this.gate.run(() => fetch(url));
+            if (res.status === 429 && attempt < REQUEST_MAX_RETRIES) {
+                const backoff = BACKOFF_BASE_MS * 2 ** attempt + Math.random() * BACKOFF_JITTER_MS;
+                this.gate.pauseFor(Math.max(retryAfterMs(res, 0), backoff));
+                continue;
+            }
+            if (!res.ok) throw new Error(`Twelve Data HTTP ${res.status} for ${String(url)}`);
+            return res;
+        }
     }
 }
 
