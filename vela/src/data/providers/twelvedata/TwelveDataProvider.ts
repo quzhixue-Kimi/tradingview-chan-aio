@@ -7,6 +7,21 @@ import { RequestGate } from '../RequestGate';
 const REST = 'https://api.twelvedata.com';
 const WS = 'wss://ws.twelvedata.com/v1/quotes/price';
 
+/**
+ * Self-hosted tv-ws-server (TradingView-API bridge) endpoints.
+ * ONLY the 3-minute timeframe is served from here; every other timeframe
+ * keeps using Twelve Data exactly as before.
+ *
+ * NOTE: history is fetched over the WebSocket (subscribe → `history`),
+ * not the REST endpoint — browsers block the REST call with CORS when the
+ * chart is served from another origin, while WebSocket is exempt from CORS.
+ */
+const TV_WS_SOCKET = 'wss://tvws.isthatu.ccwu.cc/tv/ws';
+/** The single timeframe routed to tv-ws-server (WS history + WS live). */
+const TV_WS_TIMEFRAME = '3';
+/** History wait budget, matching the tv-ws-feed.ts client. */
+const TV_WS_HISTORY_TIMEOUT_MS = 30_000;
+
 /** Public REST shaping: a small concurrency cap + min-spacing keeps the sustained rate under ~8/min. */
 const REST_CONCURRENCY = 4;
 const REST_MIN_INTERVAL_MS = 8000;
@@ -26,6 +41,9 @@ function retryAfterMs(res: Response, fallbackMs: number): number {
 /** Canonical timeframe → Twelve Data interval + bar duration. */
 const TF_TO_INTERVAL: Record<string, { iv: string; ms: number }> = {
     '1': { iv: '1min', ms: 60e3 },
+    // '3' never reaches Twelve Data — it is served by tv-ws-server (see TV_WS_TIMEFRAME).
+    // The entry only keeps it advertised in supportedTimeframes and gives its bar duration.
+    '3': { iv: '3min', ms: 180e3 },
     '5': { iv: '5min', ms: 300e3 },
     '15': { iv: '15min', ms: 900e3 },
     '30': { iv: '30min', ms: 1800e3 },
@@ -41,7 +59,7 @@ const TF_TO_INTERVAL: Record<string, { iv: string; ms: number }> = {
 
 /** User-facing timeframe aliases → canonical keys (matches the other Vela layers). */
 const TF_NORMALIZE: Record<string, string> = {
-    '1m': '1', '5m': '5', '15m': '15', '30m': '30', '45m': '45',
+    '1m': '1', '3m': '3', '5m': '5', '15m': '15', '30m': '30', '45m': '45',
     '1h': '60', '2h': '120', '4h': '240', '8h': '480',
     '1d': 'D', '1w': 'W', '1mo': 'M', '1D': 'D', '1W': 'W', '4H': '240',
     D: 'D', W: 'W', M: 'M',
@@ -82,6 +100,28 @@ interface TimeSeriesRow {
     low?: string | number;
     close?: string | number;
     volume?: string | number | null;
+}
+
+/** One bar from the tv-ws-server `/tv/bars` REST endpoint or `bar` WS message. */
+interface TvWsBar {
+    time?: number;
+    open?: number;
+    high?: number;
+    low?: number;
+    close?: number;
+    volume?: number | null;
+}
+
+/** Map one tv-ws-server bar to neutral OHLCV (`time` is already epoch ms). */
+function tvWsBarToOHLCV(v: TvWsBar): OHLCV {
+    return {
+        time: Number(v.time),
+        open: Number(v.open),
+        high: Number(v.high),
+        low: Number(v.low),
+        close: Number(v.close),
+        volume: v.volume != null ? Number(v.volume) : 0,
+    };
 }
 
 /** Normalize a user timeframe to a canonical key. */
@@ -166,8 +206,13 @@ export function mergeSymbols(...lists: readonly (readonly SymbolDescriptor[])[])
  * Twelve Data market-data provider. Serves US stocks and ETFs (listing prefix =
  * the exchange: `NASDAQ:AAPL`, `NASDAQ:QQQ`). Requires an API key.
  *
+ * The 3-minute timeframe is served from a self-hosted tv-ws-server instead
+ * (WebSocket history + WebSocket live — WS is exempt from the CORS policy
+ * that blocks the REST endpoint from browser origins); pass its token as
+ * the second argument.
+ *
  *   import { TwelveDataProvider } from 'vela/providers/twelvedata';
- *   chart.data.registerProvider('twelvedata', new TwelveDataProvider(apiKey));
+ *   chart.data.registerProvider('twelvedata', new TwelveDataProvider(apiKey, tvWsToken));
  */
 export class TwelveDataProvider implements DataProvider {
     /** Cached symbol enumeration (the two catalogs are large; fetch once). */
@@ -175,7 +220,17 @@ export class TwelveDataProvider implements DataProvider {
     /** Shared request gate: caps concurrency, spaces request starts, honors 429 backoff. */
     private readonly gate = new RequestGate(REST_CONCURRENCY, REST_MIN_INTERVAL_MS);
 
-    constructor(private readonly apiKey: string) {}
+    constructor(
+        private readonly apiKey: string,
+        private readonly tvWsToken: string = '',
+    ) {
+        if (!tvWsToken) {
+            console.warn(
+                '[vela] TwelveDataProvider: tv-ws-server token is empty — 3-minute bars will get 401. ' +
+                'Set VITE_TD_WS_TOKEN in vela/.env.local BEFORE building (vite inlines it at build time).',
+            );
+        }
+    }
 
     info(): ProviderInfo {
         return {
@@ -197,6 +252,9 @@ export class TwelveDataProvider implements DataProvider {
     }
 
     async getBars(ticker: string, timeframe: string, range: BarRange): Promise<OHLCV[]> {
+        // 3-minute bars come from the self-hosted tv-ws-server; everything else
+        // keeps the Twelve Data path below exactly as before.
+        if (normalizeTf(timeframe) === TV_WS_TIMEFRAME) return this.getTvWsBars(ticker, range);
         const tf = TF_TO_INTERVAL[normalizeTf(timeframe)];
         if (!tf) {
             console.warn(`[vela] Twelve Data: timeframe "${timeframe}" is not supported.`);
@@ -246,6 +304,9 @@ export class TwelveDataProvider implements DataProvider {
     }
 
     subscribe(ticker: string, timeframe: string, onBar: (b: OHLCV) => void): Unsubscribe {
+        // 3-minute live bars come from the tv-ws-server WebSocket; everything else
+        // keeps the Twelve Data WebSocket path below exactly as before.
+        if (normalizeTf(timeframe) === TV_WS_TIMEFRAME) return this.subscribeTvWs(ticker, onBar);
         const tf = TF_TO_INTERVAL[normalizeTf(timeframe)];
         if (!tf) return () => {};
         if (typeof WebSocket === 'undefined') return () => {};
@@ -298,6 +359,132 @@ export class TwelveDataProvider implements DataProvider {
             closed = true;
             if (hb != null) clearInterval(hb);
             ws?.close();
+        };
+    }
+
+    // ── tv-ws-server (3-minute only) ─────────────────────────────────────────
+
+    /** 3-minute history from the self-hosted tv-ws-server (subscribe → `history` over WebSocket). */
+    private getTvWsBars(ticker: string, range: BarRange): Promise<OHLCV[]> {
+        const count = Math.min(Math.max(range.limit ?? 500, 1), 1000);
+        const symbol = ticker.includes(':') ? ticker : `NASDAQ:${ticker.trim().toUpperCase()}`;
+        if (typeof WebSocket === 'undefined') return Promise.resolve([]);
+        return new Promise<OHLCV[]>((resolve) => {
+            let done = false;
+            let ws: WebSocket | null = null;
+            const finish = (bars: OHLCV[]): void => {
+                if (done) return;
+                done = true;
+                clearTimeout(timer);
+                if (ws) {
+                    try {
+                        ws.close();
+                    } catch {
+                        // already closing — nothing to do
+                    }
+                    ws = null;
+                }
+                resolve(bars);
+            };
+            const timer = setTimeout(() => {
+                console.warn(`[vela] tv-ws-server: history timeout for ${symbol} 3m`);
+                finish([]);
+            }, TV_WS_HISTORY_TIMEOUT_MS);
+            try {
+                ws = new WebSocket(`${TV_WS_SOCKET}?token=${this.tvWsToken}`);
+            } catch (e) {
+                console.warn(`[vela] tv-ws-server: failed to connect for ${symbol} 3m — ${e instanceof Error ? e.message : String(e)}`);
+                finish([]);
+                return;
+            }
+            ws.onopen = () => {
+                ws!.send(JSON.stringify({ action: 'subscribe', symbol, resolution: TV_WS_TIMEFRAME, count }));
+            };
+            ws.onmessage = (ev) => {
+                let m: { type?: string; bars?: TvWsBar[]; code?: string; message?: string };
+                try {
+                    m = JSON.parse(String(ev.data)) as typeof m;
+                } catch {
+                    return;
+                }
+                if (m.type === 'history' && Array.isArray(m.bars)) {
+                    finish(dedupeSorted(m.bars.map(tvWsBarToOHLCV).filter((b) => b.time > 0)));
+                } else if (m.type === 'error') {
+                    console.warn(`[vela] tv-ws-server: ${String(m.message ?? m.code ?? 'error')} (${symbol} 3m)`);
+                    finish([]);
+                }
+                // 'subscribed' / 'pong' / 'status' / 'bar' need no action here
+            };
+            ws.onerror = () => finish([]);
+            ws.onclose = () => finish([]);
+        });
+    }
+
+    /**
+     * 3-minute live bars from the tv-ws-server WebSocket.
+     *
+     * Protocol:
+     *   -> {"action":"subscribe","symbol":"NASDAQ:QQQ","resolution":"3","count":500}
+     *   <- {"type":"history","bars":[...]}   // seeds the forming bar
+     *   <- {"type":"bar","bar":{...}}        // latest bar; same time overwrites
+     *   -> {"action":"ping"} / <- {"type":"pong"}
+     */
+    private subscribeTvWs(ticker: string, onBar: (b: OHLCV) => void): Unsubscribe {
+        if (typeof WebSocket === 'undefined') return () => {};
+        const symbol = ticker.includes(':') ? ticker : `NASDAQ:${ticker.trim().toUpperCase()}`;
+        let closed = false;
+        let ws: WebSocket | null = null;
+        let hb: ReturnType<typeof setInterval> | undefined;
+        let cur: OHLCV | null = null;
+
+        const open = (): void => {
+            if (closed) return;
+            ws = new WebSocket(`${TV_WS_SOCKET}?token=${this.tvWsToken}`);
+            ws.onopen = () => {
+                ws!.send(JSON.stringify({ action: 'subscribe', symbol, resolution: TV_WS_TIMEFRAME, count: 500 }));
+                hb = setInterval(() => {
+                    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ action: 'ping' }));
+                }, 20_000);
+            };
+            ws.onmessage = (ev) => {
+                let m: { type?: string; bars?: TvWsBar[]; bar?: TvWsBar; code?: string; message?: string };
+                try {
+                    m = JSON.parse(String(ev.data)) as typeof m;
+                } catch {
+                    return;
+                }
+                if (m.type === 'history' && Array.isArray(m.bars)) {
+                    const bars = m.bars.map(tvWsBarToOHLCV).filter((b) => b.time > 0);
+                    if (bars.length > 0) cur = bars[bars.length - 1]!;
+                } else if (m.type === 'bar' && m.bar) {
+                    const b = tvWsBarToOHLCV(m.bar);
+                    if (!(b.time > 0)) return;
+                    if (cur && b.time < cur.time) return; // stale — ignore
+                    cur = b; // same time overwrites (forming bar), newer time starts a bar
+                    onBar({ ...cur });
+                } else if (m.type === 'error') {
+                    console.warn(`[vela] tv-ws-server: ${String(m.message ?? m.code ?? 'error')}`);
+                }
+                // 'subscribed' / 'pong' / 'status' need no action
+            };
+            ws.onclose = () => {
+                if (hb != null) clearInterval(hb);
+                hb = undefined;
+                if (!closed) setTimeout(open, 2000);
+            };
+        };
+        open();
+        return () => {
+            closed = true;
+            if (hb != null) clearInterval(hb);
+            if (ws) {
+                try {
+                    ws.send(JSON.stringify({ action: 'unsubscribe', symbol, resolution: TV_WS_TIMEFRAME }));
+                } catch {
+                    // socket already closing — nothing to do
+                }
+                ws.close();
+            }
         };
     }
 
