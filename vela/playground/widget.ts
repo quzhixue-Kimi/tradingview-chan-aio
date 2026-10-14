@@ -205,35 +205,44 @@ async function runCode(ctx: WidgetContext): Promise<void> {
 
 ws.refreshActions();
 
+/**
+ * 自定义 Pine 指标清单：文件放在 vela/playground/public/indicators/ 下，
+ * 构建后拷到 dist-playground/indicators/，nginx 的 location /indicators/ 负责 serve。
+ * overlay 与否由各脚本自己的 indicator() 声明决定（bytz-nine 主图叠加，
+ * smo 独立副图），core 会自动路由到正确的 pane，互不干扰。
+ * 以后加新指标：把 .pine 文件丢进 indicators/ 目录，再往这个数组加一行。
+ */
+const PINE_INDICATORS = ['bytz-nine.pine', 'smo.pine'];
+
+async function loadPineIndicator(file: string): Promise<void> {
+  const response = await fetch(`${import.meta.env.BASE_URL}indicators/${file}`, {
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error(`加载 Pine Script 失败：${file} HTTP ${response.status}`);
+  }
+
+  const script = await response.text();
+
+  if (!script.trimStart().startsWith('//@version=')) {
+    throw new Error(`返回内容不是 Pine Script：${file}，请检查静态文件路径`);
+  }
+
+  const handle = ws.chart.addIndicator(script, {
+    language: 'pine',
+  });
+
+  handle.on('error', ({ error }) => {
+    console.error('[vela-dev] Indicators failed:', file, error.message);
+  });
+}
+
 void ws.chart.ready().then(async () => {
   try {
-    const response = await fetch(
-      `${import.meta.env.BASE_URL}indicators/bytz-nine.pine`,
-      { cache: 'no-store' },
-    );
-
-    if (!response.ok) {
-      throw new Error(`加载 Pine Script 失败：HTTP ${response.status}`);
+    for (const file of PINE_INDICATORS) {
+      await loadPineIndicator(file);
     }
-
-    const script = await response.text();
-
-    if (!script.trimStart().startsWith('//@version=')) {
-      throw new Error(
-        '返回内容不是 Pine Script，请检查静态文件路径',
-      );
-    }
-
-    const handle = ws.chart.addIndicator(script, {
-      language: 'pine',
-    });
-
-    handle.on('error', ({ error }) => {
-      console.error(
-        '[vela-dev] Indicators failed:',
-        error.message,
-      );
-    });
   } catch (error) {
     console.error('[vela-dev] 加载指标失败:', error);
   }
