@@ -206,13 +206,45 @@ async function runCode(ctx: WidgetContext): Promise<void> {
 ws.refreshActions();
 
 /**
- * 自定义 Pine 指标清单：文件放在 vela/playground/public/indicators/ 下，
- * 构建后拷到 dist-playground/indicators/，nginx 的 location /indicators/ 负责 serve。
+ * 自定义 Pine 指标清单（服务端动态配置，免编译）：
+ *   /var/www/vela/indicators/manifest.json
+ *   { "indicators": ["bytz-nine.pine", "smo.pine"] }
+ * 也支持对象写法做临时禁用：{ "file": "smo.pine", "enabled": false }
+ *
+ * 加新指标：把 .pine 文件丢进服务器的 indicators/ 目录，
+ * 在 manifest.json 里加一行文件名，刷新页面即生效，无需重新 build。
  * overlay 与否由各脚本自己的 indicator() 声明决定（bytz-nine 主图叠加，
  * smo 独立副图），core 会自动路由到正确的 pane，互不干扰。
- * 以后加新指标：把 .pine 文件丢进 indicators/ 目录，再往这个数组加一行。
+ *
+ * 注意：deploy 打包时排除了 indicators/ 且不再清空该目录，
+ * 服务端的 manifest.json 与 .pine 文件由手工管理，部署不会覆盖。
+ * 本地 vela/playground/public/indicators/ 只用于本机 playground 调试。
  */
-const PINE_INDICATORS = ['bytz-nine.pine', 'smo.pine'];
+const INDICATORS_MANIFEST_URL = `${import.meta.env.BASE_URL}indicators/manifest.json`;
+/** manifest.json 缺失或损坏时的兜底清单 */
+const FALLBACK_INDICATORS = ['bytz-nine.pine', 'smo.pine'];
+
+type ManifestEntry = string | { file: string; enabled?: boolean };
+
+/** 读服务端清单；返回 null 表示清单不可用（调用方用兜底清单） */
+async function loadManifest(): Promise<string[] | null> {
+  try {
+    const response = await fetch(INDICATORS_MANIFEST_URL, { cache: 'no-store' });
+    if (!response.ok) return null;
+    const manifest = (await response.json()) as { indicators?: ManifestEntry[] };
+    if (!Array.isArray(manifest?.indicators)) {
+      console.warn('[vela-dev] manifest.json 格式错误，缺少 indicators 数组');
+      return null;
+    }
+    return manifest.indicators
+      .map((e) => (typeof e === 'string' ? { file: e, enabled: true } : e))
+      .filter((e) => e.enabled !== false && typeof e.file === 'string' && e.file.length > 0)
+      .map((e) => (e as { file: string }).file);
+  } catch (error) {
+    console.warn('[vela-dev] 指标清单加载失败:', error);
+    return null;
+  }
+}
 
 async function loadPineIndicator(file: string): Promise<void> {
   const response = await fetch(`${import.meta.env.BASE_URL}indicators/${file}`, {
@@ -225,7 +257,9 @@ async function loadPineIndicator(file: string): Promise<void> {
 
   const script = await response.text();
 
-  if (!script.trimStart().startsWith('//@version=')) {
+  // 有些脚本文件头带版权注释（如 AlgoAlpha 的 MPL 声明），只要求前 10 行内出现版本声明
+  const head = script.split('\n').slice(0, 10).join('\n');
+  if (!head.includes('//@version=')) {
     throw new Error(`返回内容不是 Pine Script：${file}，请检查静态文件路径`);
   }
 
@@ -239,12 +273,14 @@ async function loadPineIndicator(file: string): Promise<void> {
 }
 
 void ws.chart.ready().then(async () => {
-  try {
-    for (const file of PINE_INDICATORS) {
+  const files = (await loadManifest()) ?? [...FALLBACK_INDICATORS];
+  for (const file of files) {
+    try {
       await loadPineIndicator(file);
+    } catch (error) {
+      // 单个指标失败不影响其他指标继续加载
+      console.error('[vela-dev] 加载指标失败:', file, error);
     }
-  } catch (error) {
-    console.error('[vela-dev] 加载指标失败:', error);
   }
 });
 
