@@ -2,6 +2,154 @@
 
 All notable changes to Vela, newest first.
 
+## [0.8.5]
+
+### Added
+
+- **Size panes from code.** `chart.panes.setHeightWeight(paneId, weight)` sets how much of the
+  chart's height a pane takes, relative to the others: the price pane starts at 3 and each
+  indicator pane at 1, so a weight of 6 on the price pane next to two indicator panes gives it
+  three quarters of the height. `chart.panes.list()` now reports each pane's `heightWeight`, and
+  `pane:changed` fires when a pane's size changes, including when the user lets go of a pane
+  separator, and when a new indicator creates its pane, so a host can save the layout and keep
+  its own pane controls in step without polling.
+- **Bring an overlay in front of the candles from its legend.** New indicators start behind the
+  candles, so a line or a candle overlay on the price chart could be hidden under them. Its
+  legend row's **Move to** menu, and its right-click menu, now step it one layer at a time:
+  **Bring in front of price** or **Bring in front of** the indicator directly in front of it, and
+  **Send behind price** or **Send behind** the indicator directly behind it. Every other layer
+  keeps its place, and the order is saved with the chart. The legend now lists each pane's
+  indicators in their drawing order, front-most on top, the same order as the object tree.
+- **Clicks and the crosshair name the pane.** `onClick` now reports the pane that was clicked
+  and the value under the click on that pane's scale, alongside the bar time, and
+  `onCrosshairMove` reports the pane under the cursor. Both carry the pane's `paneId`, the same
+  id `chart.panes` uses, and right-click menu actions get it on `ctx.pointer` too, so a click
+  on one of several indicator panes can be told apart.
+- **Plugin indicators can wait for the full history.** A native indicator registered with
+  `waitsForHistory: true` does not compute while the chart's history is still loading: its
+  legend row shows a loading state, and it computes once, over every candle, when the history
+  is complete. A history extended later holds its previous output in place until the new
+  candles have all arrived. Without the flag, an indicator keeps computing as each part of the
+  history lands.
+- **Indicator plots can continue past the last candle.** A plot shifted forward, such as a
+  Pine Script `plot()` with a positive `offset`, now keeps drawing into the empty space to
+  the right of the latest candle instead of stopping at it. Fills between such plots follow
+  them, and the price scale keeps their values in view. Engines get this by emitting points
+  beyond the last bar, one per future bar; older engines are unaffected.
+
+### Changed
+
+- **Linear Regression is now two studies: an LSMA and a slope.** The Linear Regression
+  Curve opened an empty pane below the chart while its curve drew over the candles. It is
+  replaced by the **Least Squares Moving Average**, which draws on the price chart like the
+  other averages, colored by its slope and with a regression offset, and the **Linear
+  Regression Slope**, which plots the fit's change per bar in its own pane around a zero
+  line. Saved charts keep their study: a saved curve opens as an LSMA with the same length,
+  and a saved slope as a Linear Regression Slope.
+  _(Breaking: the `linear-regression` built-in type is gone. Add `lsma` or
+  `linear-regression-slope` instead.)_
+
+### Fixed
+
+- **Built-in indicators stay on their candles while history loads.** When older candles
+  arrived after the chart first painted, as they do while a symbol's history is still being
+  completed, a built-in study such as an EMA could slide back in time, end well before the last
+  candle, or vanish from view entirely, until the next price update or the end of the load.
+  The built-in studies now wait until the history has finished loading, showing a loading state
+  in their legend meanwhile, then compute once over every candle, the way script indicators do.
+  Volume still paints from the first candles. Plugin indicators no longer slide either, and
+  shortening the history from the chart settings leaves every indicator on its candles.
+- **Studies follow a switch to Heikin Ashi at once.** After switching the chart style to Heikin
+  Ashi, the built-in studies kept showing values computed from the regular candles until the
+  next price update. They now recalculate over the Heikin Ashi candles straight away, and over
+  the regular candles again when you switch back.
+- **Resized panes keep their size when indicators are added.** Dragging a pane separator, then
+  adding an indicator that draws on an existing pane (a moving average on the price chart, or
+  one merged into another indicator's pane), snapped the panes back to their default heights.
+  Pane sizes now stay until you change them.
+- **Candle overlays with gaps keep updating.** An indicator drawing its own candles or bars
+  (Pine Script's `plotcandle()` and `plotbar()`, or a custom engine) with no candle on some
+  bars — Pine Script's `show_last`, for one — painted the first time, then failed on its next
+  update: a live tick, an input change, a replay step. Such an indicator now keeps updating and
+  leaves those bars empty, and a candle with any missing price is skipped the same way.
+- **Plugin visuals clear the moment you switch markets.** Changing the symbol or timeframe on a
+  chart showing plugin-drawn data, such as a custom chart type or an indicator that paints its
+  own layer, could stack the old market's visuals in a single column at the right edge until
+  the new bars arrived, and data the old market was still loading could land on the new one
+  afterwards. The old market's visuals now disappear as soon as you switch, and nothing it was
+  still loading is drawn.
+
+## [0.8.4]
+
+### Added
+
+- **Drawing tools remember their settings.** Each tool now starts its next drawing from the
+  last one you styled: colors, widths, text styling and the tool's own settings, such as a Fib's
+  levels or a position's account size. Styling several drawings at once counts too. A
+  workspace or widget saves these settings in its state document, along with the magnet and
+  stay-in-drawing-mode, and shares them across every chart in the grid, so they survive a
+  reload. Read and restore the set with `chart.drawings.toolDefaults()` and
+  `setToolDefaults()`, follow changes on `drawing:defaults`, and send a tool back to its
+  factory look with `resetToolDefaults()`.
+- **A full settings panel for every drawing.** The gear on a drawing's toolbar, or a
+  double-click on the drawing, opens one panel with all of the tool's settings: its look, its own
+  options, its label, the price and time of each point, and the timeframes it shows on. Options
+  appear only when they apply, sections fold to a one-line summary, and Cancel puts the drawing
+  back as it was. The chart stays usable behind the panel.
+- **Styles for every tool.** Save a drawing's look as a named style and apply it to any drawing
+  of that tool in one click, with a live preview on hover. Line and area tools come with
+  ready-made styles. Styles are kept with the other tool settings; read and restore them with
+  `chart.drawings.toolTemplates()` and `setToolTemplates()`.
+- **Drawings can show on chosen timeframes.** Limit a drawing to intraday charts, to 1H and up,
+  or to any set of timeframes; other charts hide it. The limit is saved with the drawing as
+  `showOn`.
+- **Trend lines extend.** A trend line can run on past either point to the edge of the chart,
+  and its label can sit at the start, middle or end of the line, above or below it.
+- **Fib level sets.** The Fib retracement offers Classic, Extension and OTE level sets. Classic
+  shows the standard pullback ratios; Extension measures from the swing's start and projects
+  targets past its end; OTE marks the 0.62–0.79 entry zone with equilibrium at 0.5 and targets
+  beyond the swing. Every set keeps the whole ladder of levels, the unused ones switched off.
+  Retracement and extension levels can also run on to the chart's edge, show their ratio, their
+  price, both or neither, on the left or the right, and drop the tinted background between them.
+- **Price action tools.** A new Price Action section in the Fibonacci flyout holds three tools,
+  each placed with one click on a candle: **Fair Value Gap**, **Order Block** and **Liquidity**.
+  Each finds its zone or level on the candles and runs right until the event you choose (tested,
+  half-filled, filled, broken or swept), then marks it. A filled gap can flip once price closes
+  through it, and a broken order block can carry on as a breaker. In the settings panel, an option
+  that only matters in some modes appears only in them.
+
+### Changed
+
+- **One settings button.** The drawing toolbar's separate Levels, Position size and Settings
+  buttons are now a single Settings button that opens the full panel for every tool.
+- **Levels in a grid.** Fibs, Gann tools and Mach figures list every level in a two-column grid
+  of on/off, ratio and color. A new retracement or extension carries a longer ladder of levels,
+  with the familiar ones on. Level labels set before still show, but are no longer edited in the
+  panel.
+- **Labels stay readable over lines.** A drawing's label now carries a thin outline in the chart's
+  background color, so a line running through it no longer hides the words.
+
+### Fixed
+
+- **Arrow mark labels no longer cover the arrow.** Text on an Arrow Mark Up now sits
+  centered below the arrow, and text on an Arrow Mark Down sits centered above it, instead
+  of starting at the arrow's tip.
+- **The trend angle's degree readout no longer sits on its line.** On a rising line the
+  readout moved above the baseline, where the line runs, so the line crossed the digits.
+  It now sits on the side of the baseline the line leaves empty, with a halo that keeps it
+  legible over candles.
+- **Per-bar candle colors stay on their candles as an indicator updates.** The colors a
+  `plotcandle()` or `plotbar()` series sets for each bar were applied only when the
+  indicator was added. Later recalculations, such as each live tick, replaced the candles but
+  kept the old colors: a color change on an existing bar never showed, colors could land on
+  the wrong candles, and new candles kept the default up/down colors. Every recalculation now
+  repaints the candles with the colors it sets, and one that sets none clears the old ones.
+- **Your own candles are never moved by `live: true`.** A chart given its bars through
+  `data` with `live: true` used to nudge the last candle by up to 0.15% every second and
+  append made-up candles, so real data showed price movement that never happened. Bars
+  passed as `data` are now shown exactly as given. To stream real updates onto your own
+  bars, register a data provider that implements `subscribe`.
+
 ## [0.8.3]
 
 ### Added
