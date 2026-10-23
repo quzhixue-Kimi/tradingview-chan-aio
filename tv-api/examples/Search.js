@@ -1,14 +1,11 @@
-const TradingView = require('../main');
+// Market search, indicator search and technical ratings.
+// Run: npm run build && node examples/search.js
+import { getTechnicalAnalysis, searchIndicators, searchMarkets } from '@mathieuc/tradingview';
 
-/**
- * This example tests the searching functions such
- * as 'searchMarketV3' and 'searchIndicator'
- */
+const markets = await searchMarkets('BINANCE:BTC', { type: 'crypto' });
+console.log('Markets:', markets.slice(0, 5).map((m) => `${m.id} (${m.description})`));
 
-TradingView.searchMarketV3('BINANCE:').then((rs) => {
-  console.log('Found Markets:', rs);
-});
+const indicators = await searchIndicators('RSI');
+console.log('Indicators:', indicators.slice(0, 5).map((i) => `${i.id} - ${i.name} [${i.access}]`));
 
-TradingView.searchIndicator('RSI').then((rs) => {
-  console.log('Found Indicators:', rs);
-});
+console.log('Daily ratings for', markets[0].id, (await getTechnicalAnalysis(markets[0].id))?.['1D']);

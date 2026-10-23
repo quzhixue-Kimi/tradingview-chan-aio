@@ -6,10 +6,45 @@
  *
  * 启动: 在任意目录执行  node /root/tools/tv-api/tv-ws-server/server.js
  * .env 和 logs/ 都相对于本文件所在目录，不依赖启动时的工作目录。
+ *
+ * 本文件是 ESM（仓库 package.json 有 "type": "module"），用 createRequire 继续复用
+ * CommonJS 依赖；只有 TradingView-API v4 通过 import() 加载。
+ * 业务逻辑与 v3 版本保持一致，改动仅限 v3 -> v4 的 API 映射。
  */
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+import { createRequire } from 'node:module';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
+const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = require('path').dirname(__filename);
+
+// dotenv 优先；没有安装时用内置解析，行为一致（不覆盖已有环境变量）。
+try {
+  require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+} catch (_) {
+  const fs = require('fs');
+  const envFile = require('path').join(__dirname, '.env');
+  if (fs.existsSync(envFile)) {
+    for (const rawLine of fs.readFileSync(envFile, 'utf8').split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#')) continue;
+      const eq = line.indexOf('=');
+      if (eq <= 0) continue;
+      const key = line.slice(0, eq).trim();
+      if (process.env[key] !== undefined) continue;
+      let value = line.slice(eq + 1).trim();
+      if (
+        (value.startsWith('"') && value.endsWith('"'))
+        || (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+      process.env[key] = value;
+    }
+  }
+}
+
+const path = require('path');
 const http = require('http');
 const fs = require('fs');
 const WebSocketLib = require('ws');
@@ -69,18 +104,22 @@ function log(level, msg, meta) {
 }
 
 // ---------------------------------------------------------------- TradingView lib
-function loadTradingView() {
+async function loadTradingView() {
   const candidates = [
     process.env.TV_LIB_PATH,
-    path.resolve(__dirname, '..'), // 放在 TradingView-API 仓库的子目录里时
+    path.join(__dirname, '..', 'dist', 'index.js'), // 放在 TradingView-API 仓库的子目录里时
     '@mathieuc/tradingview', // npm 安装时
   ].filter(Boolean);
 
   for (const c of candidates) {
     try {
-      const lib = require(c);
-      if (lib && typeof lib.Client === 'function') {
-        log('info', 'TradingView library loaded', { from: c });
+      let entry = c;
+      if (!c.startsWith('@') && fs.existsSync(c) && fs.statSync(c).isDirectory()) {
+        entry = path.join(c, 'dist', 'index.js');
+      }
+      const lib = c.startsWith('@') ? await import(c) : await import(pathToFileURL(entry).href);
+      if (lib && typeof lib.TradingViewClient === 'function') {
+        log('info', 'TradingView library loaded', { from: entry });
         return lib;
       }
     } catch (e) {
@@ -92,7 +131,7 @@ function loadTradingView() {
       'or set TV_LIB_PATH, or run: npm i @mathieuc/tradingview',
   );
 }
-const TradingView = loadTradingView();
+const TradingView = await loadTradingView();
 
 // ---------------------------------------------------------------- time / bars
 const NY_TZ = 'America/New_York';
@@ -115,8 +154,8 @@ function toBar(p) {
     timeUtc: new Date(time).toISOString(),
     timeNY: DateTime.fromMillis(time, { zone: NY_TZ }).toFormat('yyyy-LL-dd HH:mm:ss ZZZZ'),
     open: p.open,
-    high: p.max,
-    low: p.min,
+    high: p.high,
+    low: p.low,
     close: p.close,
     volume: p.volume,
   };
@@ -181,53 +220,56 @@ class Stream {
 
     let client;
     try {
-      client = new TradingView.Client(
-        cfg.tvSession ? { token: cfg.tvSession, signature: cfg.tvSignature } : {},
+      client = new TradingView.TradingViewClient(
+        cfg.tvSession
+          ? { credentials: { session: cfg.tvSession, signature: cfg.tvSignature } }
+          : {},
       );
     } catch (e) {
       log('error', 'create TradingView client failed', { key: this.key, err: errStr(e) });
       this.scheduleRetry();
       return;
     }
-    const chart = new client.Session.Chart();
+    const chart = client.createChart();
     this.client = client;
     this.chart = chart;
 
-    client.onConnected(() => {
+    client.on('open', () => {
       if (this.client !== client) return;
       log('info', 'TradingView websocket connected', { key: this.key });
     });
-    client.onDisconnected(() => {
+    client.on('close', () => {
       if (this.client !== client) return;
       log('warn', 'TradingView websocket disconnected', { key: this.key });
       this.scheduleRetry();
     });
-    client.onError((...a) => {
+    client.on('error', (e) => {
       if (this.client !== client) return;
-      log('error', 'TradingView client error', { key: this.key, err: a.map(errStr).join(' ') });
+      log('error', 'TradingView client error', { key: this.key, err: errStr(e) });
     });
 
-    chart.onError((...a) => {
+    chart.on('error', (e) => {
       if (this.chart !== chart) return;
-      const message = a.map(errStr).join(' ');
+      const message = errStr(e);
       log('error', 'TradingView chart error', { key: this.key, err: message });
       this.broadcast({ type: 'error', code: 'chart_error', symbol: this.full, message });
     });
-    chart.onSymbolLoaded(() => {
+    chart.on('symbolLoaded', () => {
       if (this.chart !== chart) return;
+      const infos = chart.symbolInfo;
       log('info', 'symbol loaded', {
         key: this.key,
-        description: chart.infos && chart.infos.description,
-        exchange: chart.infos && chart.infos.exchange,
-        currency: chart.infos && chart.infos.currency_id,
+        description: infos && infos.description,
+        exchange: infos && infos.exchange,
+        currency: infos && infos.currency_id,
       });
     });
-    chart.onUpdate(() => {
+    chart.on('update', () => {
       if (this.chart !== chart) return;
       this.onChartUpdate();
     });
 
-    chart.setMarket(this.full, { timeframe: this.resolution, range: cfg.historyBars });
+    chart.setMarket(this.full, { timeframe: this.resolution, count: cfg.historyBars });
 
     clearTimeout(this.loadTimer);
     this.loadTimer = setTimeout(() => {
@@ -255,9 +297,9 @@ class Stream {
       log('debug', 'chart.delete failed', { err: errStr(e) });
     }
     try {
-      if (client) client.end();
+      if (client) client.close();
     } catch (e) {
-      log('debug', 'client.end failed', { err: errStr(e) });
+      log('debug', 'client.close failed', { err: errStr(e) });
     }
   }
 
@@ -281,7 +323,7 @@ class Stream {
    */
   currentBars(count) {
     if (!this.chart) return [];
-    let periods = this.chart.periods
+    let periods = this.chart.candles
       .filter((p) => isUsRth(p.time * 1000))
       .sort((a, b) => b.time - a.time); // 最新在前
     if (count && periods.length > count) periods = periods.slice(0, count);
@@ -290,7 +332,7 @@ class Stream {
 
   onChartUpdate() {
     this.lastUpdateAt = Date.now();
-    if (!this.chart || this.chart.periods.length === 0) return;
+    if (!this.chart || this.chart.candles.length === 0) return;
 
     if (!this.ready) {
       this.ready = true;
@@ -303,7 +345,7 @@ class Stream {
       recent.forEach((b) => this.sent.set(b.time, barSig(b)));
       log('info', 'history ready', {
         key: this.key,
-        totalPeriods: this.chart.periods.length,
+        totalPeriods: this.chart.candles.length,
         latest: recent.length ? recent[recent.length - 1].timeNY : null,
       });
       for (const [ws, count] of this.subs) this.sendHistory(ws, count);
@@ -336,7 +378,8 @@ class Stream {
   flush() {
     if (!this.ready || !this.dirty || !this.chart || this.subs.size === 0) return;
     this.dirty = false;
-    const tail = this.chart.periods.slice(0, 3).map(toBar).reverse();
+    // v4 的 candles 是最旧在前，所以取末尾 3 根；输出仍是升序。
+    const tail = this.chart.candles.slice(-3).map(toBar);
     for (const b of tail) {
       if (!isUsRth(b.time)) {
         log('debug', 'bar ignored: outside RTH', { key: this.key, timeNY: b.timeNY });

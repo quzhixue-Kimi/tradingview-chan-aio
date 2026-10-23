@@ -1,8 +1,8 @@
 'use strict';
 /**
  * 用法:
- *   node test-client.js [symbol] [count] [url]
- *   node test-client.js QQQ 20 ws://127.0.0.1:4000/ws
+ *   node test-client.cjs [symbol] [count] [url]
+ *   node test-client.cjs QQQ 20 ws://127.0.0.1:4000/ws
  * 带 token: url 里加 ?token=xxx
  */
 const WebSocket = require('ws');
