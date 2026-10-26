@@ -110,7 +110,7 @@ describe('TwelveDataProvider.getBars — 3m goes to tv-ws-server, others stay on
         const pending = new TwelveDataProvider('k', 'test-token').getBars('QQQ', '3', { limit: 500 });
 
         expect(sockets.length).toBe(1);
-        expect(sockets[0]!.url).toBe('wss://tvws.isthatu.ccwu.cc/tv/ws?token=test-token');
+        expect(sockets[0]!.url).toBe('wss://tvws.kq2022.eu.org/tv/ws?token=test-token');
         sockets[0]!.onopen!();
         expect(sockets[0]!.sent).toEqual([
             JSON.stringify({ action: 'subscribe', symbol: 'NASDAQ:QQQ', resolution: '3', count: 500 }),
@@ -132,7 +132,7 @@ describe('TwelveDataProvider.getBars — 3m goes to tv-ws-server, others stay on
         const td = calls.find((u) => u.includes('api.twelvedata.com/time_series'));
         expect(td).toBeDefined();
         expect(td!).toContain('interval=5min');
-        expect(calls.some((u) => u.includes('tvws.isthatu.ccwu.cc'))).toBe(false);
+        expect(calls.some((u) => u.includes('tvws.kq2022.eu.org'))).toBe(false);
     });
 
     it('returns [] and warns when the tv-ws-server reports an error', async () => {
@@ -195,7 +195,7 @@ describe('TwelveDataProvider.subscribe — 3m uses the tv-ws-server WebSocket', 
             const unsub = new TwelveDataProvider('k', 'test-token').subscribe('QQQ', '3', (b) => seen.push(b.time));
 
             expect(sockets.length).toBe(1);
-            expect(sockets[0]!.url).toBe('wss://tvws.isthatu.ccwu.cc/tv/ws?token=test-token');
+            expect(sockets[0]!.url).toBe('wss://tvws.kq2022.eu.org./tv/ws?token=test-token');
             sockets[0]!.onopen!();
             expect(sockets[0]!.sent).toEqual([
                 JSON.stringify({ action: 'subscribe', symbol: 'NASDAQ:QQQ', resolution: '3', count: 500 }),

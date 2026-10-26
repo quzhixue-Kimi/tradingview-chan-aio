@@ -16,7 +16,7 @@ const WS = 'wss://ws.twelvedata.com/v1/quotes/price';
  * not the REST endpoint — browsers block the REST call with CORS when the
  * chart is served from another origin, while WebSocket is exempt from CORS.
  */
-const TV_WS_SOCKET = 'wss://tvws.isthatu.ccwu.cc/tv/ws';
+const TV_WS_SOCKET = 'wss://tvws.kq2022.eu.org/tv/ws';
 /** The single timeframe routed to tv-ws-server (WS history + WS live). */
 const TV_WS_TIMEFRAME = '3';
 /** History wait budget, matching the tv-ws-feed.ts client. */
