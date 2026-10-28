@@ -121,6 +121,6 @@
     "@zag-js/tooltip": "^1.42.0",
     "@zag-js/types": "^1.42.0",
     "@zag-js/vanilla": "^1.42.0",
-    "pinets": "^0.13.0"
+    "pinets": "^0.13.1"
   }
 }
