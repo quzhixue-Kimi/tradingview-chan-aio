@@ -1,6 +1,6 @@
 {
   "name": "@luxalgo/vela",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "description": "The open-source charting library with a native high-performance renderer, drawing tools, pluggable chart types and pluggable scripting engines.",
   "keywords": [
     "charting library",
@@ -112,8 +112,8 @@
     "vitest": "^4.1.0"
   },
   "dependencies": {
-    "@luxalgo/vela": "^0.9.2",
-    "@luxalgo/vela-pinets": "^0.3.1",
+    "@luxalgo/vela": "^0.9.3",
+    "@luxalgo/vela-pinets": "^0.3.2",
     "@zag-js/core": "^1.42.0",
     "@zag-js/dialog": "^1.42.0",
     "@zag-js/dom-query": "^1.42.0",
