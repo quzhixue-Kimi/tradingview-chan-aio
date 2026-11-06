@@ -1,0 +1,66 @@
+# @luxalgo/vela-ui 0.1.0
+
+> The component kit of Vela: one file per component, Zag state machines for behavior, CSS in
+> cascade layers over design tokens, and one typed theme config.
+
+Every component is a function, `create<Name>(props)`, imported from its own path, that returns
+a handle with `el` (the element to append) and `destroy()`. Every part of a component carries
+a `data-slot`; variants and sizes are `data-variant` and `data-size`. Mount components in a
+kit host: `ensureUIHost(el, createTheme())` (`@luxalgo/vela-ui/theme`), or inside a Vela chart.
+
+## Skills (agent instructions in this package)
+
+- [theming-vela-ui](skills/theming-vela-ui/SKILL.md): Themes and restyles Vela charts and @luxalgo/vela-ui components with createTheme - brand colors, light, dark and custom themes, design tokens, component settings, part-by-part CSS restyles, scrollbars, cascade layers and theme JSON files checked with checkTheme.
+- [using-vela-ui-components](skills/using-vela-ui-components/SKILL.md): Builds interface pieces with @luxalgo/vela-ui, the component kit behind Vela charts - buttons, tabs, toggle groups, badges, dialogs, drawers, dropdown and context menus, tooltips, hover cards, popovers, form controls (checkbox, switch, input, select, number input, date and color pickers) and data components (data table, stat, sparkline, bar, line and scatter charts).
+- [writing-vela-ui-components](skills/writing-vela-ui-components/SKILL.md): Writes new UI components with the @luxalgo/vela-ui authoring helpers (defineComponent, h, css, defineStyles, variants, t), customizes a kit component's markup or behavior by copying its source with "vela-ui add --source", and adds components to the kit itself.
+
+Link them into a project's coding agent with `npx skills experimental_sync` once the package is
+installed, or install them from the repository with `npx skills add LuxAlgo/Vela`.
+
+## Reference (in this package)
+
+- [Components](dist/manifest.json): every component's import, props, variants, parts and
+  their slots, settings, the tokens it reads, the attributes its CSS styles by, an example.
+- [Theme schema](dist/theme.schema.json): the JSON Schema of a theme written to a file.
+- [Theming](docs/theming.md): createTheme, kit hosts, colors-only themes, the tokens, component
+  settings, part CSS and the cascade layers.
+- [What to change, and where](docs/what-to-change.md): one table, a kind of change per row.
+- [Writing a component](docs/writing-a-component.md): the one-file shape and its rules.
+- Plain CSS themes: `dist/themes/dark.css`, `dist/themes/light.css`.
+- Command line: `npx @luxalgo/vela-ui add <component>` prints its import, `--source` copies it
+  as a component of the project's own, `check` validates the project (see README.md).
+
+## Components
+
+- createBadge (`@luxalgo/vela-ui/badge`): Badge: a short status label, or a round count.
+- createBarChart (`@luxalgo/vela-ui/bar-chart`): BarChart: vertical bars around a zero line with a hover readout (daily P&L, a distribution), in the profit tone above zero and the loss tone below unless a bar names its own; optionally a value axis with gridlines and a title, slanted labels, and dashed markers.
+- createButton (`@luxalgo/vela-ui/button`): Button: a <button> with optional icons before and after its text.
+- createCalloutBubble (`@luxalgo/vela-ui/callout-bubble`): CalloutBubble: a small tinted circle with a centered icon.
+- createCheckbox (`@luxalgo/vela-ui/checkbox`): Checkbox: a square check toggle, filled with a check mark when on.
+- createColorField (`@luxalgo/vela-ui/color-picker`): ColorPicker: a swatch grid (grays, then hue × shade), a recents row with a custom "+" chooser, and an opacity slider over a transparency checker; and ColorField, the swatch button that opens it on a popover.
+- createContextMenu (`@luxalgo/vela-ui/context-menu`): ContextMenu: the dropdown menu's list, opened where the user asks for it instead of from a button: a right-click on the target, a long press on a touch screen, or the keyboard's context-menu key on a focused target.
+- createDataTable (`@luxalgo/vela-ui/data-table`): DataTable: a sortable table with a sticky header in its own scroller (positions, orders, trades).
+- createDatePicker (`@luxalgo/vela-ui/date-picker`): DatePicker: a month calendar with month and year panels behind its header.
+- createDialog (`@luxalgo/vela-ui/dialog`): Dialog: a backdrop and a panel with a header and a body, over Zag's dialog machine (focus trap, dismissal, ARIA).
+- createDonut (`@luxalgo/vela-ui/donut`): Donut: a ring split in segments with a figure in its middle (a win rate), and a legend of the segments beside it.
+- createDrawer (`@luxalgo/vela-ui/drawer`): Drawer: a bottom sheet.
+- createDropdownMenu (`@luxalgo/vela-ui/dropdown-menu`): DropdownMenu: MenuItemDescriptor[] projected into a floating list over Zag's menu machine (keyboard navigation, typeahead and dismissal belong to the machine).
+- createEmpty (`@luxalgo/vela-ui/empty`): Empty: what a panel shows when it has nothing to list: an icon in a tile, a title, a line saying why or what to do, and an optional action (a button that fills it).
+- FieldGridVariant (`@luxalgo/vela-ui/field`): Field: the label-and-control grid the settings dialogs lay their inputs out on: rows (a label and its control, an optional master toggle that dims the control, an optional info mark), full-width toggles, stacked and inline rows, section headings and separators, and a factory that builds a row's control from a descriptor.
+- createGlyphSelect (`@luxalgo/vela-ui/glyph-select`): GlyphSelect: a trigger showing the current option's glyph, and a list of glyph options on a popover.
+- createHoverCard (`@luxalgo/vela-ui/hover-card`): HoverCard: a card beside a control while the pointer rests on it, richer than a tooltip: a title with an icon tile and a shortcut drawn as keycaps, a description, rich content (figures, a sparkline) and a hint line.
+- createInputGroup (`@luxalgo/vela-ui/input-group`): InputGroup: an input with addons inside its border: an icon, a short text or a button, at its start or end, or in a row above or below it (a search field with its magnifier, an amount with its unit).
+- createInput (`@luxalgo/vela-ui/input`): Input: a one-line text input that commits on blur or Enter.
+- createKbd (`@luxalgo/vela-ui/kbd`): Kbd: one key of a shortcut, drawn as a keycap (`Alt`, `A`).
+- createLineChart (`@luxalgo/vela-ui/line-chart`): LineChart: a compact area chart with a hover readout (equity curves, P&L over time): one line over a fading area, in the profit tone when its last point ends at or above the baseline and the loss tone below it, with optional axis labels under and beside the plot.
+- createNumberInput (`@luxalgo/vela-ui/number-input`): NumberInput: a typed number field with optional steppers that show on hover and repeat while pressed.
+- createPopover (`@luxalgo/vela-ui/popover`): Popover: a positioned floating shell.
+- createScatterChart (`@luxalgo/vela-ui/scatter-chart`): ScatterChart: dots on two value axes with an optional dashed trend line and a hover readout (a trade's P&L against its length).
+- createSelect (`@luxalgo/vela-ui/select`): Select: a trigger button and a themed option list on a popover, with an overlay scrollbar for long lists.
+- createSparkline (`@luxalgo/vela-ui/sparkline`): Sparkline: a tiny line of values (a watchlist row's day, an equity curve in a card), in the profit tone when it ends at or above where it started (or its baseline) and the loss tone below, with an optional soft area under it and a dotted baseline (the previous close).
+- createStat (`@luxalgo/vela-ui/stat`): Stat: a figure under its label (Net P&L, Win rate), with an optional line under it.
+- createSwitch (`@luxalgo/vela-ui/switch`): Switch: a sliding on/off toggle, a track with a round thumb, for a setting that applies at once.
+- createTabs (`@luxalgo/vela-ui/tabs`): Tabs: a tab list over Zag's tabs machine (WAI-ARIA tabs: roving focus, the arrow keys along the orientation, Home/End, automatic or manual activation).
+- createTextArea (`@luxalgo/vela-ui/text-area`): TextArea: a multi-line text input that commits on blur, and can grow with its content up to a number of lines before it scrolls.
+- createToggleGroup (`@luxalgo/vela-ui/toggle-group`): ToggleGroup: a few options side by side on one track, over Zag's toggle-group machine.
+- createTooltip (`@luxalgo/vela-ui/tooltip`): Tooltip: a floating label over Zag's tooltip machine (floating-ui placement).

@@ -675,6 +675,34 @@ pin your own action in its place (`right: ['actions', 'alerts', 'panels',
 'mytool.screenshot.open']`), and the contributed dropdown sits exactly where the
 built-in button was.
 
+## The sidebar
+
+`sidebar: true` adds a toolbar along the shell's right edge, beside the topbar, the charts
+and the bottom bar, so the shell has a toolbar on every side. It is off by default; a shell
+without it keeps its layout exactly as before.
+
+```ts
+new VelaWorkspace('#chart', {
+    sidebar: true, // or { top: [...], bottom: [...] }
+});
+```
+
+- **It takes over the side-panel toggles.** On the desktop layout the panel buttons
+  (object tree, data window, every contributed panel) move from the topbar to the sidebar;
+  they stay in step with the dock either way.
+- **Plugins add their own entries** with `registerWidgetAction({ target: 'sidebar', … })`
+  (see the [plugin SDK](../contributing/plugin-sdk.md#the-sidebar)).
+- **Its layout is declarative**, like the topbar's: `{ top, bottom }` list the entries of the
+  upper section (from the top edge down) and of the lower section (anchored to the bottom
+  edge). Entries are panel ids (`'objects'`, `'dataWindow'`, a `registerSidePanel` id),
+  sidebar action ids, the flow slots `'panels'` and `'actions'` (everything of that kind not
+  listed elsewhere, in order) and `'|'` for a separator. An undeclared section keeps its
+  default: `top: ['panels']`, `bottom: ['objects', 'dataWindow', '|', 'actions']`.
+- **Desktop only.** On the mobile layout the sidebar is hidden: the panels keep their rows
+  in the three-dots menu, and the sidebar actions join them there.
+- It sits outermost on the right, outside full-height `placement: 'column'` panels and any
+  element a plugin docks at the edge.
+
 ## Mobile
 
 In a container narrower than ~640px (or up to ~920px with a coarse pointer — a
@@ -745,8 +773,8 @@ Three levels, shallow to deep:
 3. **Contributed actions** — plugins and hosts add topbar buttons and context-menu items
    as data descriptors via
    [`registerWidgetAction`](../contributing/plugin-sdk.md#widget-actions--registerwidgetaction);
-   the kit's primitives (`Dialog`, `Drawer`, `Menu`, `Tooltip`, `Popover`, `Switch`,
-   `Select`, `NumberInput`, `TextField`, `ColorField` / `buildColorPicker`,
+   the kit's primitives (`Dialog`, `Drawer`, `DropdownMenu`, `Tooltip`, `Popover`, `Checkbox`,
+   `Select`, `NumberInput`, `Input`, `ColorField` / `buildColorPicker`,
    `KeymapManager`) are exported from `@luxalgo/vela/ui` for building your own panels against
    the headless core. Form controls share `md` (settings dialogs: 34px fields, hover
    steppers, chip colors) and a compact `sm` size so a host panel can match either
