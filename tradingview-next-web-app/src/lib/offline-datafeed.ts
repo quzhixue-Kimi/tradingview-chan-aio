@@ -417,7 +417,7 @@ export class OfflineDatafeed {
       session: isCrypto ? "24x7" : "0930-1630",
       exchange: isCrypto ? "CRYPTO" : "US",
       listed_exchange: isCrypto ? "CRYPTO" : "US",
-      timezone: isCrypto ? "Etc/UTC" : "Asia/Shanghai",
+      timezone: isCrypto ? "Etc/UTC" : "America/New_York",
       format: "price",
       pricescale: 10000,
       minmov: 1,

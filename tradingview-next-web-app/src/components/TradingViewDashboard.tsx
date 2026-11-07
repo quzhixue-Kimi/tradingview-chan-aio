@@ -269,7 +269,7 @@ export default function TradingViewDashboard({
         fullscreen: false,
         autosize: true,
         theme: "Dark",
-        timezone: isCrypto ? "Etc/UTC" : "Asia/Shanghai",
+        timezone: isCrypto ? "Etc/UTC" : "America/New_York",
         enabled_features: ["header_symbol_search"],
         disabled_features: [
           "timeframes_toolbar",
