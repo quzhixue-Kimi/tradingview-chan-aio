@@ -1,4 +1,4 @@
-# @luxalgo/vela-ui 0.1.0
+# @luxalgo/vela-ui 0.2.0
 
 > The component kit of Vela: one file per component, Zag state machines for behavior, CSS in
 > cascade layers over design tokens, and one typed theme config.
@@ -11,7 +11,7 @@ kit host: `ensureUIHost(el, createTheme())` (`@luxalgo/vela-ui/theme`), or insid
 ## Skills (agent instructions in this package)
 
 - [theming-vela-ui](skills/theming-vela-ui/SKILL.md): Themes and restyles Vela charts and @luxalgo/vela-ui components with createTheme - brand colors, light, dark and custom themes, design tokens, component settings, part-by-part CSS restyles, scrollbars, cascade layers and theme JSON files checked with checkTheme.
-- [using-vela-ui-components](skills/using-vela-ui-components/SKILL.md): Builds interface pieces with @luxalgo/vela-ui, the component kit behind Vela charts - buttons, tabs, toggle groups, badges, dialogs, drawers, dropdown and context menus, tooltips, hover cards, popovers, form controls (checkbox, switch, input, select, number input, date and color pickers) and data components (data table, stat, sparkline, bar, line and scatter charts).
+- [using-vela-ui-components](skills/using-vela-ui-components/SKILL.md): Builds interface pieces with @luxalgo/vela-ui, the component kit behind Vela charts - buttons, tabs, toggle groups, badges, dialogs, drawers, dropdown and context menus, tooltips, hover cards, popovers, collapsible sections, list rows, form controls (checkbox, switch, slider, input, select, number input, date and color pickers) and data components (data table, sort buttons, month grid, stat, sparkline, bar, line and scatter charts).
 - [writing-vela-ui-components](skills/writing-vela-ui-components/SKILL.md): Writes new UI components with the @luxalgo/vela-ui authoring helpers (defineComponent, h, css, defineStyles, variants, t), customizes a kit component's markup or behavior by copying its source with "vela-ui add --source", and adds components to the kit itself.
 
 Link them into a project's coding agent with `npx skills experimental_sync` once the package is
@@ -34,9 +34,10 @@ installed, or install them from the repository with `npx skills add LuxAlgo/Vela
 
 - createBadge (`@luxalgo/vela-ui/badge`): Badge: a short status label, or a round count.
 - createBarChart (`@luxalgo/vela-ui/bar-chart`): BarChart: vertical bars around a zero line with a hover readout (daily P&L, a distribution), in the profit tone above zero and the loss tone below unless a bar names its own; optionally a value axis with gridlines and a title, slanted labels, and dashed markers.
-- createButton (`@luxalgo/vela-ui/button`): Button: a <button> with optional icons before and after its text.
+- createButton (`@luxalgo/vela-ui/button`): Button: a <button> with optional icons and key caps before and after its text (`↵ Open`, `Esc Close` in a picker's footer).
 - createCalloutBubble (`@luxalgo/vela-ui/callout-bubble`): CalloutBubble: a small tinted circle with a centered icon.
 - createCheckbox (`@luxalgo/vela-ui/checkbox`): Checkbox: a square check toggle, filled with a check mark when on.
+- createCollapsible (`@luxalgo/vela-ui/collapsible`): Collapsible: a section that shows or hides its content.
 - createColorField (`@luxalgo/vela-ui/color-picker`): ColorPicker: a swatch grid (grays, then hue × shade), a recents row with a custom "+" chooser, and an opacity slider over a transparency checker; and ColorField, the swatch button that opens it on a popover.
 - createContextMenu (`@luxalgo/vela-ui/context-menu`): ContextMenu: the dropdown menu's list, opened where the user asks for it instead of from a button: a right-click on the target, a long press on a touch screen, or the keyboard's context-menu key on a focused target.
 - createDataTable (`@luxalgo/vela-ui/data-table`): DataTable: a sortable table with a sticky header in its own scroller (positions, orders, trades).
@@ -51,12 +52,16 @@ installed, or install them from the repository with `npx skills add LuxAlgo/Vela
 - createHoverCard (`@luxalgo/vela-ui/hover-card`): HoverCard: a card beside a control while the pointer rests on it, richer than a tooltip: a title with an icon tile and a shortcut drawn as keycaps, a description, rich content (figures, a sparkline) and a hint line.
 - createInputGroup (`@luxalgo/vela-ui/input-group`): InputGroup: an input with addons inside its border: an icon, a short text or a button, at its start or end, or in a row above or below it (a search field with its magnifier, an amount with its unit).
 - createInput (`@luxalgo/vela-ui/input`): Input: a one-line text input that commits on blur or Enter.
+- createItem (`@luxalgo/vela-ui/item`): Item: one row of a list (a watchlist, a list of alerts, search results): media (an icon, a logo, an avatar, a star), a title over a description, then at its end the meta (figures, badges) and the actions (buttons).
 - createKbd (`@luxalgo/vela-ui/kbd`): Kbd: one key of a shortcut, drawn as a keycap (`Alt`, `A`).
 - createLineChart (`@luxalgo/vela-ui/line-chart`): LineChart: a compact area chart with a hover readout (equity curves, P&L over time): one line over a fading area, in the profit tone when its last point ends at or above the baseline and the loss tone below it, with optional axis labels under and beside the plot.
+- createMonthGrid (`@luxalgo/vela-ui/month-grid`): MonthGrid: a month of day cells, each with a figure: a trading journal's P&L by day.
 - createNumberInput (`@luxalgo/vela-ui/number-input`): NumberInput: a typed number field with optional steppers that show on hover and repeat while pressed.
 - createPopover (`@luxalgo/vela-ui/popover`): Popover: a positioned floating shell.
 - createScatterChart (`@luxalgo/vela-ui/scatter-chart`): ScatterChart: dots on two value axes with an optional dashed trend line and a hover readout (a trade's P&L against its length).
 - createSelect (`@luxalgo/vela-ui/select`): Select: a trigger button and a themed option list on a popover, with an overlay scrollbar for long lists.
+- createSlider (`@luxalgo/vela-ui/slider`): Slider: a value on a track, dragged by its thumb or moved with the arrow keys, Page Up/Down and Home/End, over Zag's slider machine.
+- createSortButton (`@luxalgo/vela-ui/sort-button`): SortButton: the header of a column that sorts a list which is not a table (a watchlist's Last and Day %).
 - createSparkline (`@luxalgo/vela-ui/sparkline`): Sparkline: a tiny line of values (a watchlist row's day, an equity curve in a card), in the profit tone when it ends at or above where it started (or its baseline) and the loss tone below, with an optional soft area under it and a dotted baseline (the previous close).
 - createStat (`@luxalgo/vela-ui/stat`): Stat: a figure under its label (Net P&L, Win rate), with an optional line under it.
 - createSwitch (`@luxalgo/vela-ui/switch`): Switch: a sliding on/off toggle, a track with a round thumb, for a setting that applies at once.
