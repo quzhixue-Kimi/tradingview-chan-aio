@@ -11,7 +11,7 @@ kit host: `ensureUIHost(el, createTheme())` (`@luxalgo/vela-ui/theme`), or insid
 ## Skills (agent instructions in this package)
 
 - [theming-vela-ui](skills/theming-vela-ui/SKILL.md): Themes and restyles Vela charts and @luxalgo/vela-ui components with createTheme - brand colors, light, dark and custom themes, design tokens, component settings, part-by-part CSS restyles, scrollbars, cascade layers and theme JSON files checked with checkTheme.
-- [using-vela-ui-components](skills/using-vela-ui-components/SKILL.md): Builds interface pieces with @luxalgo/vela-ui, the component kit behind Vela charts - buttons, tabs, toggle groups, badges, dialogs, drawers, dropdown and context menus, tooltips, hover cards, popovers, collapsible sections, list rows, form controls (checkbox, switch, slider, input, select, number input, date and color pickers) and data components (data table, sort buttons, month grid, stat, sparkline, bar, line and scatter charts).
+- [using-vela-ui-components](skills/using-vela-ui-components/SKILL.md): Builds interface pieces with @luxalgo/vela-ui, the component kit behind Vela charts - buttons, tabs, toggle groups, badges, dialogs, drawers, dropdown and context menus, tooltips, hover cards, popovers, collapsible sections, cards, list rows, form controls (checkbox, switch, slider, input, select, number input, date and color pickers) and data components (data table, sort buttons, month grid, stat, sparkline, bar, line and scatter charts, treemap).
 - [writing-vela-ui-components](skills/writing-vela-ui-components/SKILL.md): Writes new UI components with the @luxalgo/vela-ui authoring helpers (defineComponent, h, css, defineStyles, variants, t), customizes a kit component's markup or behavior by copying its source with "vela-ui add --source", and adds components to the kit itself.
 
 Link them into a project's coding agent with `npx skills experimental_sync` once the package is
@@ -36,6 +36,7 @@ installed, or install them from the repository with `npx skills add LuxAlgo/Vela
 - createBarChart (`@luxalgo/vela-ui/bar-chart`): BarChart: vertical bars around a zero line with a hover readout (daily P&L, a distribution), in the profit tone above zero and the loss tone below unless a bar names its own; optionally a value axis with gridlines and a title, slanted labels, and dashed markers.
 - createButton (`@luxalgo/vela-ui/button`): Button: a <button> with optional icons and key caps before and after its text (`↵ Open`, `Esc Close` in a picker's footer).
 - createCalloutBubble (`@luxalgo/vela-ui/callout-bubble`): CalloutBubble: a small tinted circle with a centered icon.
+- createCard (`@luxalgo/vela-ui/card`): Card: a surface for one subject (a panel of figures, a chart, a summary): a header with an eyebrow over the title and a description under it, an action at its end (buttons, a toggle group), then the content and a footer past a line.
 - createCheckbox (`@luxalgo/vela-ui/checkbox`): Checkbox: a square check toggle, filled with a check mark when on.
 - createCollapsible (`@luxalgo/vela-ui/collapsible`): Collapsible: a section that shows or hides its content.
 - createColorField (`@luxalgo/vela-ui/color-picker`): ColorPicker: a swatch grid (grays, then hue × shade), a recents row with a custom "+" chooser, and an opacity slider over a transparency checker; and ColorField, the swatch button that opens it on a popover.
@@ -69,3 +70,4 @@ installed, or install them from the repository with `npx skills add LuxAlgo/Vela
 - createTextArea (`@luxalgo/vela-ui/text-area`): TextArea: a multi-line text input that commits on blur, and can grow with its content up to a number of lines before it scrolls.
 - createToggleGroup (`@luxalgo/vela-ui/toggle-group`): ToggleGroup: a few options side by side on one track, over Zag's toggle-group machine.
 - createTooltip (`@luxalgo/vela-ui/tooltip`): Tooltip: a floating label over Zag's tooltip machine (floating-ui placement).
+- createTreemap (`@luxalgo/vela-ui/treemap`): Treemap: weighted items laid into a rectangle as tiles close to square, each tinted by its value on a diverging scale (up above zero, down below, stronger as the value grows) and labeled when it has room.
