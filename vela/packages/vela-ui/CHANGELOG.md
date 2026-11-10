@@ -3,10 +3,41 @@
 All notable changes to `@luxalgo/vela-ui`, newest first. Vela's own changes, including how it
 uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
 
-## [Unreleased]
+## [0.4.0]
+
+### Changed
+
+- **The stat is now the figure.** The component that shows a value under its label is
+  `@luxalgo/vela-ui/figure`, with `createFigure` and its slots and theme entry named `figure`.
+  Content blockers took the old module's file for a tracking script and blocked it, so a
+  page using it lost the component while developing. _(Breaking: import `createFigure` from
+  `@luxalgo/vela-ui/figure` instead of `createStat` from `@luxalgo/vela-ui/stat`, and rename
+  `stat` to `figure` in your theme's `components` and in CSS that targets its slots.)_
+
+### Fixed
+
+- **Open menus stay on top of the page.** With `@zag-js` 1.47, which a fresh install
+  resolves, an open dropdown menu dropped under the content beside it as soon as the pointer
+  left it, so it seemed to vanish over a chart. Menus, tooltips and dialogs now keep their
+  stacking.
+- **A search field's clear cross follows the theme.** Search fields inside a kit host show
+  their clear cross in the theme's text color, white on a dark theme and black on a light one,
+  instead of the browser's own, which some systems paint blue.
+
+## [0.3.0]
 
 ### Added
 
+- **Toasts.** `@luxalgo/vela-ui/toast` shows short notices that stack in a corner and leave on
+  their own, with the same calls and options as shadcn's toast. `toast('Saved')` raises one
+  from anywhere on the page, `toast.success`, `.info`, `.warning`, `.error` and `.loading` give
+  it its kind's icon, and `toast.promise` follows a task from loading to its result. A toast
+  takes a description, an action and a cancel button, its own icon and duration, and raising
+  it again with the same `id` updates it in place; `toast.dismiss` takes one or all away.
+  `createToaster` shows them, over the page or inside a host: the newest in front with the
+  older ones folded behind it, spread out while hovered (or with Alt+T), and swiped away
+  towards their edge. It takes the corner, the number shown, rich colors per kind, close
+  buttons and the toasts' defaults, and a theme sets its width, colors and radius.
 - **A treemap.** `@luxalgo/vela-ui/treemap` lays weighted items out as tiles close to square,
   each tinted by its value on a diverging scale (a watchlist's moves of the day, sized equally
   or by market cap). Items with children form groups headed by their name and the median of
@@ -23,6 +54,16 @@ uses the kit, are in [Vela's changelog](../../CHANGELOG.md).
   With `onSelect` the whole card is clickable while a press on a button inside it stays the
   button's, and `selected` marks the current one. Its padding, radius, background and border
   are settings a theme can change.
+
+### Fixed
+
+- **Key caps read on every button.** On the `default`, `up` and `down` buttons, key caps
+  (`keys`, `keysEnd`) drew their label in the button's own fill color, so only an empty cap
+  showed. Inside a button a key cap now takes the button's text color and draws only its
+  outline, on every variant.
+- **A dialog's close button has a name.** Screen readers announced it as an unnamed button;
+  it is now "Close", in the language of the dialog's new `i18n` option, else the kit build's
+  translator. `setI18n` renames it when the language changes while the dialog is open.
 
 ## [0.2.0]
 

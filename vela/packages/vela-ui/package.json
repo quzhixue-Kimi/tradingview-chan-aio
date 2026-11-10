@@ -1,13 +1,13 @@
 {
   "name": "@luxalgo/vela-ui",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "description": "The component kit of Vela: one file per component, Zag state machines for behavior, CSS in cascade layers over design tokens.",
   "license": "Apache-2.0",
   "author": "LuxAlgo",
   "homepage": "https://velacharts.dev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/luxalgo/vela.git",
+    "url": "https://github.com/LuxAlgo/Vela.git",
     "directory": "packages/vela-ui"
   },
   "type": "module",

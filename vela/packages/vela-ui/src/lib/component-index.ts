@@ -68,6 +68,10 @@ export const KIT_COMPONENTS: Readonly<Record<string, { readonly parts: readonly 
         parts: ['grid', 'row', 'span', 'label', 'cell', 'bool', 'stacked', 'stacked-head', 'inline', 'inline-item', 'toggle-label', 'section', 'sep'],
         settings: [],
     },
+    figure: {
+        parts: ['root', 'label', 'value', 'sub'],
+        settings: [],
+    },
     'glyph-select': {
         parts: ['root', 'value', 'icon', 'content', 'item'],
         settings: ['radius', 'content-radius', 'focus-ring'],
@@ -143,6 +147,10 @@ export const KIT_COMPONENTS: Readonly<Record<string, { readonly parts: readonly 
     'text-area': {
         parts: ['root', 'input'],
         settings: ['radius', 'focus-ring'],
+    },
+    toast: {
+        parts: ['root', 'list', 'item', 'close', 'icon', 'content', 'title', 'description', 'cancel', 'action'],
+        settings: ['width', 'radius', 'background', 'border', 'foreground', 'description-color', 'shadow', 'success', 'info', 'warning', 'error'],
     },
     'toggle-group': {
         parts: ['root', 'item', 'icon'],

@@ -1968,6 +1968,7 @@ export interface VelaCoreMessageCatalog {
     'ui.datePicker.previousDecade': string;
     'ui.datePicker.previousMonth': string;
     'ui.datePicker.previousYear': string;
+    'ui.dialog.close': string;
     'ui.keys.alt': string;
     'ui.keys.ctrl': string;
     'ui.keys.general': string;
@@ -1980,6 +1981,8 @@ export interface VelaCoreMessageCatalog {
     'ui.numberInput.increase': string;
     'ui.sortButton.ascending': string;
     'ui.sortButton.descending': string;
+    'ui.toast.close': string;
+    'ui.toast.region': string;
     'ui.treemap.all': string;
     'ui.treemap.zoomIn': string;
     'vela.sidebar.label': string;
@@ -2206,7 +2209,6 @@ export interface VelaCoreMessageCatalog {
     'workspace.alerts.drawerTitle': string;
     'workspace.alerts.none': string;
     'workspace.alerts.row': string;
-    'workspace.alerts.toast': string;
     'workspace.alerts.toastUntitled': string;
     'workspace.alerts.untitled': string;
     'workspace.indicators.builtIn': string;
