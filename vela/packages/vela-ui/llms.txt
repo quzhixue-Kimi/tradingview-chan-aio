@@ -1,4 +1,4 @@
-# @luxalgo/vela-ui 0.4.0
+# @luxalgo/vela-ui 0.4.1
 
 > The component kit of Vela: one file per component, Zag state machines for behavior, CSS in
 > cascade layers over design tokens, and one typed theme config.
