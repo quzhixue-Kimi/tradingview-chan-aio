@@ -130,9 +130,7 @@ describe('TwelveDataProvider.getBars — all timeframes go to tv-ws-server', () 
         warn.mockRestore();
     });
 
-    it('loads Twelve Data stock and ETF catalogs while keeping bars on tv-ws-server', async () => {
-        vi.useFakeTimers();
-        try {
+    it('loads mocked stock and ETF catalogs while keeping bars on tv-ws-server', async () => {
         const fetchMock = vi.fn(async (input: string | URL) => {
             const url = new URL(String(input));
             if (url.pathname === '/stocks') return { ok: true, status: 200, json: async () => ({ data: [{ symbol: 'ABC', name: 'Example Inc', exchange: 'NASDAQ', type: 'Common Stock' }] }) } as Response;
@@ -142,6 +140,9 @@ describe('TwelveDataProvider.getBars — all timeframes go to tv-ws-server', () 
         vi.stubGlobal('fetch', fetchMock);
         const provider = new TwelveDataProvider('td-key', 'tv-token');
 
+        // The real provider spaces catalog requests by eight seconds. Replace only
+        // the test clock so both mocked requests complete without wall-clock delay.
+        vi.useFakeTimers();
         const pending = provider.listSymbols();
         await vi.advanceTimersByTimeAsync(16_000);
         const symbols = await pending;
@@ -153,9 +154,12 @@ describe('TwelveDataProvider.getBars — all timeframes go to tv-ws-server', () 
         ]));
         expect(symbols).toContainEqual(expect.objectContaining({ ticker: 'ABC', prefix: 'NASDAQ', type: 'stock' }));
         expect(symbols).toContainEqual(expect.objectContaining({ ticker: 'XYZ', prefix: 'AMEX', type: 'etf' }));
-        } finally {
-            vi.useRealTimers();
-        }
+        vi.useRealTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.unstubAllGlobals();
     });
 });
 
@@ -238,10 +242,19 @@ describe('TwelveDataProvider.subscribe — 3m uses the tv-ws-server WebSocket', 
     it('resolves listing exchange prefixes for tv-ws subscriptions', async () => {
         const sockets = stubWebSocket();
         const provider = new TwelveDataProvider('k', 'test-token');
-        await provider.listSymbols();
+        vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+            const path = new URL(String(input)).pathname;
+            const data = path === '/etfs'
+                ? [{ symbol: 'SPY', name: 'Example ETF', exchange: 'AMEX', type: 'ETF' }]
+                : [];
+            return { ok: true, status: 200, json: async () => ({ data }) } as Response;
+        }));
+        vi.useFakeTimers();
+        const pendingSymbols = provider.listSymbols();
+        await vi.advanceTimersByTimeAsync(8_000);
+        await pendingSymbols;
+        vi.useRealTimers();
         const unsub = provider.subscribe('SPY', '3', () => {});
-        await Promise.resolve();
-        await Promise.resolve();
         expect(sockets.length).toBe(1);
         sockets[0]!.onopen!();
         const sub = JSON.parse(sockets[0]!.sent[0]!);

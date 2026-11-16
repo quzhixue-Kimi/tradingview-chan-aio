@@ -128,6 +128,47 @@ export function dedupeSorted(bars: OHLCV[]): OHLCV[] {
     return [...byTime.values()].sort((a, b) => a.time - b.time);
 }
 
+/** Map a catalog instrument class onto the picker's tab vocabulary. */
+export function instrumentType(raw: string | undefined, fallback: 'stock' | 'etf'): string {
+    const type = (raw ?? '').trim().toLowerCase();
+    if (!type) return fallback;
+    if (type === 'common stock' || type === 'preferred stock' || type === 'stock' || type === 'reit') return 'stock';
+    if (type === 'etf' || type === 'exchange-traded note') return 'etf';
+    return type;
+}
+
+/** Map one catalog row; skip entries without a ticker. */
+function mapCatalogRow(row: CatalogRow, fallbackType: 'stock' | 'etf'): SymbolDescriptor | null {
+    const ticker = row.symbol?.trim();
+    if (!ticker) return null;
+    const prefix = row.exchange?.trim().toUpperCase();
+    return {
+        ticker,
+        description: row.name?.trim() || ticker,
+        type: instrumentType(row.type, fallbackType),
+        ...(prefix ? { prefix } : {}),
+    };
+}
+
+function venueKey(symbol: SymbolDescriptor): string {
+    return `${(symbol.prefix ?? '').toUpperCase()}:${symbol.ticker.toUpperCase()}`;
+}
+
+/** Keep the first occurrence so fallback entries retain priority. */
+function mergeSymbols(...lists: readonly (readonly SymbolDescriptor[])[]): SymbolDescriptor[] {
+    const seen = new Set<string>();
+    const merged: SymbolDescriptor[] = [];
+    for (const list of lists) {
+        for (const symbol of list) {
+            const key = venueKey(symbol);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            merged.push(symbol);
+        }
+    }
+    return merged;
+}
+
 /**
  * Market-data provider backed by the self-hosted tv-ws-server
  * (TradingView-API bridge). Serves US stocks and ETFs via WebSocket
