@@ -1,8 +1,8 @@
-// The workspace playground page: a 4-cell VelaWorkspace on live Twelve Data (US stocks)
-// with the page's demo scripting engine and the full shared chrome — topbar (symbol /
-// timeframe / style / LAYOUT dropdowns, indicator picker, alerts, screenshot, object
-// tree, settings), bottombar (range chips, clock, timezone), one keymap. Served straight
-// from src/ (HMR).
+// The workspace playground page: a 4-cell VelaWorkspace on live tv-ws-server data
+// (QQQ / SPY / SOXL / YINN, all on 3-minute bars) with the page's demo scripting engine
+// and the full shared chrome — topbar (symbol / timeframe / style / LAYOUT dropdowns,
+// indicator picker, alerts, screenshot, object tree, settings), bottombar (range chips,
+// clock, timezone), one keymap. Served straight from src/ (HMR).
 //
 // Vela ships no scripting engine — `demo-engine.ts` is the page's own, written against
 // the public port (see widget.ts's header). For Pine Script:
@@ -20,15 +20,15 @@ const ws = new VelaWorkspace("#workspace", {
   // `cells` overrides per cell. A cell's NAME is its durable identity (persistence,
   // sync groups, ws.cell(name)) — DECLARATION ORDER fills the layout's slots, and
   // any entry is optional (an undeclared slot boots on the defaults above).
-  symbol: "AAPL", // bare = first declared provider; 'twelvedata:AAPL' pins a venue
-  timeframe: "60",
+  symbol: "QQQ", // bare = first declared provider; 'twelvedata:QQQ' pins a venue
+  timeframe: "3",
   cells: {
-    aapl: { symbol: "AAPL", timeframe: "60" },
-    msft: { symbol: "MSFT", timeframe: "15" },
-    googl: { symbol: "GOOGL", timeframe: "240" },
-    amzn: { symbol: "AMZN", timeframe: "D" },
+    qqq:  { symbol: "QQQ",  timeframe: "3" },
+    spy:  { symbol: "SPY",  timeframe: "3" },
+    soxl: { symbol: "SOXL", timeframe: "3" },
+    yinn: { symbol: "YINN", timeframe: "3" },
   },
-  providers: { twelvedata: () => new TwelveDataProvider(import.meta.env.VITE_TD_KEY || "YOUR_API_KEY_HERE") },
+  providers: { twelvedata: () => new TwelveDataProvider(import.meta.env.VITE_TD_KEY || "YOUR_API_KEY_HERE", import.meta.env.VITE_TD_WS_TOKEN || "") },
   engines: { demo: () => new DemoEngine() }, // ONE instance per cell (a worker engine would get a thread each)
   defaultLanguage: "demo", // scripts added without a `language` run on the engine above
   // No script manifest: the indicators dialog lists the built-in catalog only.
@@ -61,7 +61,7 @@ const ws = new VelaWorkspace("#workspace", {
   // (no `height` here: the grid sizes its cells)
 
   // ── The rest of the SHELL options, at their defaults ──────────────────────────────
-  // timeframes: ['1', '5', '15', '30', '60', '240', 'D', 'W', 'M'], // topbar timeframe presets
+  timeframes: ['1', '3', '5', '15', '30', '60', '120', '240', 'D'], // topbar timeframe presets
   // timezone: 'Etc/UTC',            // display timezone (IANA), one zone for every cell
   // statusline: true,               // chrome: the per-cell status line
   // watermark: true,                // chrome: the per-cell symbol watermark

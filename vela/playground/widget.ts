@@ -36,7 +36,7 @@ const ws = new VelaWorkspace('#chart', {
     autofocus: true, // the chart IS the page — shortcuts work from the first keystroke
     persist: 'vela-widget', // → 'vela-play:vela-widget' in devtools (the page's historical key)
     storage,
-    providers: { twelvedata: () => new TwelveDataProvider(import.meta.env.VITE_TD_KEY || "YOUR_API_KEY_HERE", import.meta.env.VITE_TD_WS_TOKEN || "") },
+    providers: { twelvedata: () => new TwelveDataProvider(import.meta.env.VITE_TD_KEY || 'YOUR_API_KEY_HERE', import.meta.env.VITE_TD_WS_TOKEN || '') },
     engines: { demo: () => new DemoEngine(), pine: () => new PineWorkerEngine() }, // swap for `pine: () => new PineWorkerEngine()` (see the header)
     defaultLanguage: 'pine', // scripts added without a `language` run on the Pine engine
     // No script manifest: the indicators dialog lists the built-in catalog only. Scripts
@@ -68,7 +68,7 @@ const ws = new VelaWorkspace('#chart', {
     //                                 //  manifest: rows the dialog lists next to the built-in catalog
     // indicators: async () => (await fetch('/my/manifest.json')).json(), // the manifest can also
     //                                 //  be an ASYNC LOADER (filesystem, authenticated API, …)
-    timeframes: ['1', '3', '5', '15', '30', '60', '240', 'D', 'W', 'M'], // topbar timeframe presets ('3' = 3m via tv-ws-server)
+    timeframes: ['1', '3', '5', '15', '30', '60', '120', '240', 'D'], // topbar timeframe presets
     // timezone: 'Etc/UTC',            // display timezone (IANA), switchable from the bottom bar
     // statusline: true,               // chrome: the status line
     // watermark: true,                // chrome: the symbol watermark behind the candles

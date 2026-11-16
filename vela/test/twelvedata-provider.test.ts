@@ -2,13 +2,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
     TwelveDataProvider,
     normalizeTf,
-    parseBarTime,
-    rowToOHLCV,
     dedupeSorted,
 } from '../src/data/providers/twelvedata/TwelveDataProvider';
-
-const res = (ok: boolean, body: unknown, status = ok ? 200 : 500): Response =>
-    ({ ok, status, json: () => Promise.resolve(body) }) as unknown as Response;
 
 const TV_BARS = {
     symbol: 'NASDAQ:QQQ',
@@ -29,13 +24,6 @@ describe('TwelveData pure helpers', () => {
         expect(normalizeTf('5')).toBe('5');
     });
 
-    it('rowToOHLCV maps a Twelve Data time-series row', () => {
-        expect(
-            rowToOHLCV({ datetime: '2026-10-12 14:30:00', open: '1', high: '2', low: '0.5', close: '1.5', volume: '10' }),
-        ).toMatchObject({ open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 });
-        expect(parseBarTime('2026-10-12 14:30:00')).toBe(Date.parse('2026-10-12T14:30:00Z'));
-    });
-
     it('dedupeSorted sorts by time and keeps the last bar per time', () => {
         const out = dedupeSorted([
             { time: 2, open: 1, high: 1, low: 1, close: 1, volume: 0 },
@@ -47,7 +35,7 @@ describe('TwelveData pure helpers', () => {
     });
 });
 
-describe('TwelveDataProvider.getBars — 3m goes to tv-ws-server, others stay on Twelve Data', () => {
+describe('TwelveDataProvider.getBars — all timeframes go to tv-ws-server', () => {
     afterEach(() => vi.unstubAllGlobals());
 
     /** Minimal fake WebSocket capturing instances; the test drives onopen/onmessage/onclose. */
@@ -88,19 +76,6 @@ describe('TwelveDataProvider.getBars — 3m goes to tv-ws-server, others stay on
         return instances;
     }
 
-    function stubFetch() {
-        const calls: string[] = [];
-        const fetchMock = vi.fn((input: string | URL) => {
-            const url = input.toString();
-            calls.push(url);
-            if (url.includes('api.twelvedata.com/time_series'))
-                return Promise.resolve(res(true, { values: [] }));
-            return Promise.resolve(res(false, {}));
-        });
-        vi.stubGlobal('fetch', fetchMock);
-        return calls;
-    }
-
     it('advertises the 3-minute timeframe', () => {
         expect(new TwelveDataProvider('k', 'test-token').info().supportedTimeframes).toContain('3');
     });
@@ -125,14 +100,21 @@ describe('TwelveDataProvider.getBars — 3m goes to tv-ws-server, others stay on
         expect(sockets[0]!.closed).toBe(true); // temp socket closed after history
     });
 
-    it("keeps other timeframes on Twelve Data (5m path untouched)", async () => {
-        const calls = stubFetch();
-        await new TwelveDataProvider('k', 'test-token').getBars('QQQ', '5', { limit: 10 });
+    it('fetches 5m history over the tv-ws-server WebSocket too (not Twelve Data)', async () => {
+        const sockets = stubWebSocket();
+        const pending = new TwelveDataProvider('k', 'test-token').getBars('QQQ', '5', { limit: 500 });
 
-        const td = calls.find((u) => u.includes('api.twelvedata.com/time_series'));
-        expect(td).toBeDefined();
-        expect(td!).toContain('interval=5min');
-        expect(calls.some((u) => u.includes('tvws.kq2022.eu.org'))).toBe(false);
+        expect(sockets.length).toBe(1);
+        expect(sockets[0]!.url).toBe('wss://tvws.kq2022.eu.org/tv/ws?token=test-token');
+        sockets[0]!.onopen!();
+        expect(sockets[0]!.sent).toEqual([
+            JSON.stringify({ action: 'subscribe', symbol: 'NASDAQ:QQQ', resolution: '5', count: 500 }),
+        ]);
+
+        sockets[0]!.onmessage!({ data: JSON.stringify({ type: 'history', bars: TV_BARS.bars }) });
+        const bars = await pending;
+        expect(bars.length).toBe(3);
+        expect(sockets[0]!.closed).toBe(true);
     });
 
     it('returns [] and warns when the tv-ws-server reports an error', async () => {
@@ -146,6 +128,34 @@ describe('TwelveDataProvider.getBars — 3m goes to tv-ws-server, others stay on
         expect(await pending).toEqual([]);
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('tv-ws-server'));
         warn.mockRestore();
+    });
+
+    it('loads Twelve Data stock and ETF catalogs while keeping bars on tv-ws-server', async () => {
+        vi.useFakeTimers();
+        try {
+        const fetchMock = vi.fn(async (input: string | URL) => {
+            const url = new URL(String(input));
+            if (url.pathname === '/stocks') return { ok: true, status: 200, json: async () => ({ data: [{ symbol: 'ABC', name: 'Example Inc', exchange: 'NASDAQ', type: 'Common Stock' }] }) } as Response;
+            if (url.pathname === '/etfs') return { ok: true, status: 200, json: async () => ({ data: [{ symbol: 'XYZ', name: 'Example ETF', exchange: 'AMEX', type: 'ETF' }] }) } as Response;
+            throw new Error(`Unexpected request: ${url}`);
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        const provider = new TwelveDataProvider('td-key', 'tv-token');
+
+        const pending = provider.listSymbols();
+        await vi.advanceTimersByTimeAsync(16_000);
+        const symbols = await pending;
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual(expect.arrayContaining([
+            expect.stringContaining('https://api.twelvedata.com/stocks?country=US&apikey=td-key'),
+            expect.stringContaining('https://api.twelvedata.com/etfs?country=US&apikey=td-key'),
+        ]));
+        expect(symbols).toContainEqual(expect.objectContaining({ ticker: 'ABC', prefix: 'NASDAQ', type: 'stock' }));
+        expect(symbols).toContainEqual(expect.objectContaining({ ticker: 'XYZ', prefix: 'AMEX', type: 'etf' }));
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });
 
@@ -195,7 +205,7 @@ describe('TwelveDataProvider.subscribe — 3m uses the tv-ws-server WebSocket', 
             const unsub = new TwelveDataProvider('k', 'test-token').subscribe('QQQ', '3', (b) => seen.push(b.time));
 
             expect(sockets.length).toBe(1);
-            expect(sockets[0]!.url).toBe('wss://tvws.kq2022.eu.org./tv/ws?token=test-token');
+            expect(sockets[0]!.url).toBe('wss://tvws.kq2022.eu.org/tv/ws?token=test-token');
             sockets[0]!.onopen!();
             expect(sockets[0]!.sent).toEqual([
                 JSON.stringify({ action: 'subscribe', symbol: 'NASDAQ:QQQ', resolution: '3', count: 500 }),
@@ -225,12 +235,17 @@ describe('TwelveDataProvider.subscribe — 3m uses the tv-ws-server WebSocket', 
         }
     });
 
-    it('keeps a bare ticker untouched for Twelve Data but prefixes NASDAQ: for tv-ws', () => {
+    it('resolves listing exchange prefixes for tv-ws subscriptions', async () => {
         const sockets = stubWebSocket();
-        const unsub = new TwelveDataProvider('k', 'test-token').subscribe('QQQ', '3', () => {});
+        const provider = new TwelveDataProvider('k', 'test-token');
+        await provider.listSymbols();
+        const unsub = provider.subscribe('SPY', '3', () => {});
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(sockets.length).toBe(1);
         sockets[0]!.onopen!();
         const sub = JSON.parse(sockets[0]!.sent[0]!);
-        expect(sub.symbol).toBe('NASDAQ:QQQ');
+        expect(sub.symbol).toBe('AMEX:SPY');
         unsub();
     });
 });
