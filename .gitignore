@@ -1,0 +1,8 @@
+node_modules/
+dist/
+packages/vela-ui/llms.txt
+packages/vela-ui/registry/
+.scratchpad/
+*.log
+.env.local
+.DS_Store
