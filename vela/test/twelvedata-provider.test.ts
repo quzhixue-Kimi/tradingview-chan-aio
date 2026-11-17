@@ -212,7 +212,7 @@ describe('TwelveDataProvider.subscribe — 3m uses the tv-ws-server WebSocket', 
             expect(sockets[0]!.url).toBe('wss://tvws.kq2022.eu.org/tv/ws?token=test-token');
             sockets[0]!.onopen!();
             expect(sockets[0]!.sent).toEqual([
-                JSON.stringify({ action: 'subscribe', symbol: 'NASDAQ:QQQ', resolution: '3', count: 500 }),
+                JSON.stringify({ action: 'subscribe', symbol: 'NASDAQ:QQQ', resolution: '3', count: 1000 }),
             ]);
 
             // history seeds the forming bar (no onBar yet)

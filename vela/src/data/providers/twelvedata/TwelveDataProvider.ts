@@ -30,11 +30,11 @@ const TV_WS_HISTORY_TIMEOUT_MS = 30_000;
 
 /**
  * Bar count per timeframe group.
- * Short-interval charts (≤30m) load 500 bars; longer intervals load 300.
+ * Short-interval charts (≤30m) load 1000 bars; longer intervals load 800.
  */
 const TV_WS_COUNT: Record<string, number> = {
-    '1': 500, '3': 500, '5': 500, '15': 500, '30': 500,
-    '60': 300, '120': 300, '240': 300, D: 300,
+    '1': 1000, '3': 1000, '5': 1000, '15': 1000, '30': 1000,
+    '60': 800, '120': 800, '240': 800, D: 800,
 };
 
 /** Canonical timeframe → bar duration in ms (used for live bar bucketing). */
@@ -261,8 +261,8 @@ export class TwelveDataProvider implements DataProvider {
 
     /** History from the self-hosted tv-ws-server (subscribe → `history` over WebSocket). */
     private getTvWsBars(ticker: string, tf: string, range: BarRange): Promise<OHLCV[]> {
-        const defaultCount = TV_WS_COUNT[tf] ?? 300;
-        const count = Math.min(Math.max(range.limit ?? defaultCount, 1), 1000);
+        const defaultCount = TV_WS_COUNT[tf] ?? 800;
+        const count = Math.min(Math.max(range.limit && range.limit !== 500 ? range.limit : defaultCount, 1), 1000);
         const symbol = this.tvSymbol(ticker);
         if (typeof WebSocket === 'undefined') return Promise.resolve([]);
         return new Promise<OHLCV[]>((resolve) => {
@@ -328,7 +328,7 @@ export class TwelveDataProvider implements DataProvider {
     private subscribeTvWs(ticker: string, tf: string, onBar: (b: OHLCV) => void): Unsubscribe {
         if (typeof WebSocket === 'undefined') return () => {};
         const symbol = ticker;
-        const count = TV_WS_COUNT[tf] ?? 300;
+        const count = TV_WS_COUNT[tf] ?? 800;
         let closed = false;
         let ws: WebSocket | null = null;
         let hb: ReturnType<typeof setInterval> | undefined;
