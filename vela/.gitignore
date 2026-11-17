@@ -1,9 +1,0 @@
-node_modules/
-dist/
-.scratchpad/
-*.log
-.env.local
-.DS_Store
-*.pine
-manifest.json
-indicators/

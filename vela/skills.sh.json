@@ -1,4 +1,0 @@
-{
-    "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
-    "paths": ["./packages/vela-ui/skills"]
-}
