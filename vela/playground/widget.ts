@@ -15,7 +15,8 @@
 //
 // …which is exactly what the addon's own playground does (repos/Vela-pinets, port 5192).
 import { VelaWorkspace } from '../src/workspace';
-import { BinanceProvider } from '../src/data/providers/binance';
+import { PineWorkerEngine } from '@luxalgo/vela-pinets';
+import { TwelveDataProvider } from '../src/data/providers/twelvedata';
 import { addSampleMarks } from './marks';
 import { DemoEngine, DEMO_SCRIPTS } from './demo-engine';
 import { playgroundStorage } from './persistence';
@@ -28,16 +29,16 @@ const storage = playgroundStorage();
 
 const ws = new VelaWorkspace('#chart', {
     layout: false, // SINGLE-CHART mode: one cell, no layout picker, no sync switches
-    symbol: 'BTCUSDT', // bare = first declared provider (binance); 'coinbase:BTC-USD' pins a venue
-    timeframe: '60',
+    symbol: 'QQQ', // bare = first declared provider (twelvedata); 'twelvedata:AAPL' pins a venue
+    timeframe: '3',
     live: true,
     theme: 'dark',
     autofocus: true, // the chart IS the page — shortcuts work from the first keystroke
     persist: 'vela-widget', // → 'vela-play:vela-widget' in devtools (the page's historical key)
     storage,
-    providers: { binance: () => new BinanceProvider() },
-    engines: { demo: () => new DemoEngine() }, // swap for `pine: () => new PineWorkerEngine()` (see the header)
-    defaultLanguage: 'demo', // scripts added without a `language` run on the engine above
+    providers: { twelvedata: () => new TwelveDataProvider(import.meta.env.VITE_TD_KEY || 'YOUR_API_KEY_HERE', import.meta.env.VITE_TD_WS_TOKEN || '') },
+    engines: { demo: () => new DemoEngine(), pine: () => new PineWorkerEngine() }, // swap for `pine: () => new PineWorkerEngine()` (see the header)
+    defaultLanguage: 'pine', // scripts added without a `language` run on the Pine engine
     // No script manifest: the indicators dialog lists the built-in catalog only. Scripts
     // reach the chart through the Code panel below (or an `indicators` manifest — see the
     // commented option further down).
@@ -48,7 +49,7 @@ const ws = new VelaWorkspace('#chart', {
     //                                 //  group ('canvas.grid'), or a row; ids via chart.renderer.listSettingsIds()
     // data: myBars,                   // offline OHLCV[] — replaces the provider entirely (no fetches, no live)
     // visibleRange: '3M',             // initial window: '1D'|'1W'|'1M'|'3M'|'6M'|'1Y'|'5Y'|'YTD'|'ALL' or {from,to} in ms (default: frame the tail)
-    // priceStyle: 'candles',          // 'candles'|'bars'|'line'|'linemarkers'|'stepline'|'area'|'baseline'|'columns'|'heikinashi' or a registered chart-type id
+    // priceStyle: 'candles',          // 'candles'|'bars'|'line'|'area'|'baseline'|'heikinashi' or a registered chart-type id
     // volume: true,                   // the built-in volume columns (native indicator); false opts out
     // logScale: false,                // logarithmic price scale
     // currentPriceLine: true,         // dashed line + axis chip at the latest price
@@ -67,7 +68,7 @@ const ws = new VelaWorkspace('#chart', {
     //                                 //  manifest: rows the dialog lists next to the built-in catalog
     // indicators: async () => (await fetch('/my/manifest.json')).json(), // the manifest can also
     //                                 //  be an ASYNC LOADER (filesystem, authenticated API, …)
-    // timeframes: ['1', '5', '15', '30', '60', '240', 'D', 'W', 'M'], // topbar timeframe presets
+    timeframes: ['1', '3', '5', '15', '30', '60', '120', '240', 'D'], // topbar timeframe presets
     // timezone: 'Etc/UTC',            // display timezone (IANA), switchable from the bottom bar
     // statusline: true,               // chrome: the status line
     // watermark: true,                // chrome: the symbol watermark behind the candles
@@ -155,7 +156,15 @@ registerWidgetAction({
     run: (ctx) => {
         if (!codeDialog) {
             codeArea = document.createElement('textarea');
-            codeArea.value = DEMO_SCRIPTS.bands;
+            codeArea.value = `//@version=6
+indicator("RSI Strategy")
+
+rsi = ta.rsi(close, 14)
+sma = ta.sma(rsi, 10)
+
+plot(rsi, "RSI")
+plot(sma, "Signal")`;
+
             codeArea.spellcheck = false;
             codeArea.style.cssText =
                 'width:520px;max-width:80vw;height:220px;resize:vertical;background:var(--vela-surface-overlay);color:var(--vela-fg);border:1px solid var(--vela-border-soft);border-radius:var(--vela-radius-md);padding:10px;font:12px/1.5 ui-monospace,Consolas,monospace;outline:none;';
@@ -195,6 +204,85 @@ async function runCode(ctx: WidgetContext): Promise<void> {
 }
 
 ws.refreshActions();
+
+/**
+ * 自定义 Pine 指标清单（服务端动态配置，免编译）：
+ *   /var/www/vela/indicators/manifest.json
+ *   { "indicators": ["bytz-nine.pine", "smo.pine"] }
+ * 也支持对象写法做临时禁用：{ "file": "smo.pine", "enabled": false }
+ *
+ * 加新指标：把 .pine 文件丢进服务器的 indicators/ 目录，
+ * 在 manifest.json 里加一行文件名，刷新页面即生效，无需重新 build。
+ * overlay 与否由各脚本自己的 indicator() 声明决定（bytz-nine 主图叠加，
+ * smo 独立副图），core 会自动路由到正确的 pane，互不干扰。
+ *
+ * 注意：deploy 打包时排除了 indicators/ 且不再清空该目录，
+ * 服务端的 manifest.json 与 .pine 文件由手工管理，部署不会覆盖。
+ * 本地 vela/playground/public/indicators/ 只用于本机 playground 调试。
+ */
+const INDICATORS_MANIFEST_URL = `${import.meta.env.BASE_URL}indicators/manifest.json`;
+/** manifest.json 缺失或损坏时的兜底清单 */
+const FALLBACK_INDICATORS = ['bytz-nine.pine', 'smo.pine'];
+
+type ManifestEntry = string | { file: string; enabled?: boolean };
+
+/** 读服务端清单；返回 null 表示清单不可用（调用方用兜底清单） */
+async function loadManifest(): Promise<string[] | null> {
+  try {
+    const response = await fetch(INDICATORS_MANIFEST_URL, { cache: 'no-store' });
+    if (!response.ok) return null;
+    const manifest = (await response.json()) as { indicators?: ManifestEntry[] };
+    if (!Array.isArray(manifest?.indicators)) {
+      console.warn('[vela-dev] manifest.json 格式错误，缺少 indicators 数组');
+      return null;
+    }
+    return manifest.indicators
+      .map((e) => (typeof e === 'string' ? { file: e, enabled: true } : e))
+      .filter((e) => e.enabled !== false && typeof e.file === 'string' && e.file.length > 0)
+      .map((e) => (e as { file: string }).file);
+  } catch (error) {
+    console.warn('[vela-dev] 指标清单加载失败:', error);
+    return null;
+  }
+}
+
+async function loadPineIndicator(file: string): Promise<void> {
+  const response = await fetch(`${import.meta.env.BASE_URL}indicators/${file}`, {
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new Error(`加载 Pine Script 失败：${file} HTTP ${response.status}`);
+  }
+
+  const script = await response.text();
+
+  // 有些脚本文件头带版权注释（如 AlgoAlpha 的 MPL 声明），只要求前 10 行内出现版本声明
+  const head = script.split('\n').slice(0, 10).join('\n');
+  if (!head.includes('//@version=')) {
+    throw new Error(`返回内容不是 Pine Script：${file}，请检查静态文件路径`);
+  }
+
+  const handle = ws.chart.addIndicator(script, {
+    language: 'pine',
+  });
+
+  handle.on('error', ({ error }) => {
+    console.error('[vela-dev] Indicators failed:', file, error.message);
+  });
+}
+
+void ws.chart.ready().then(async () => {
+  const files = (await loadManifest()) ?? [...FALLBACK_INDICATORS];
+  for (const file of files) {
+    try {
+      await loadPineIndicator(file);
+    } catch (error) {
+      // 单个指标失败不影响其他指标继续加载
+      console.error('[vela-dev] 加载指标失败:', file, error);
+    }
+  }
+});
 
 // ── Execution-context listener demo — how host code intercepts Vela's engine context.
 // 'context:changed' fires after the initial run and (throttled ~1/s) on live candles;

@@ -27,6 +27,7 @@ import type { popoverDef } from '../components/popover';
 import type { scatterChartDef } from '../components/scatter-chart';
 import type { selectDef } from '../components/select';
 import type { sparklineDef } from '../components/sparkline';
+import type { statDef } from '../components/stat';
 import type { figureDef } from '../components/figure';
 import type { checkboxDef } from '../components/checkbox';
 import type { collapsibleDef } from '../components/collapsible';
@@ -172,6 +173,7 @@ export interface ComponentDefs {
     slider: typeof sliderDef;
     'sort-button': typeof sortButtonDef;
     sparkline: typeof sparklineDef;
+    stat: typeof statDef;
     switch: typeof switchDef;
     tabs: typeof tabsDef;
     'text-area': typeof textAreaDef;

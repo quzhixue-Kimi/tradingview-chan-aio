@@ -1,14 +1,50 @@
 import { defineConfig } from 'vite';
-import { velaUiSource } from './scripts/vela-ui-source.mjs';
+import { resolve } from 'node:path';
 
 /**
- * Playground server: `npm run playground` serves playground/ with Vela imported STRAIGHT
- * from src/ (no build step, hot reload), and the kit from packages/vela-ui/src. Nothing else
- * to configure — Vela ships no scripting engine, so the page carries its own tiny demo engine
- * (playground/demo-engine.ts) and needs no bundler plumbing for it.
+ * Vite configuration for the Vela playground.
+ *
+ * The playground lives under the `playground/` directory and provides three
+ * HTML entry points:
+ *   - index.html     – the landing page with links to the two demos
+ *   - widget.html    – single‑chart demo (layout: false)
+ *   - workspace.html – multi‑chart workspace demo
+ *
+ * By declaring all three files as inputs, Vite will generate a single
+ * `dist-playground` output directory that contains:
+ *   - index.html, widget.html, workspace.html (unchanged HTML)
+ *   - assets/… (compiled JS/CSS for each page)
+ *
+ * The `VITE_` prefixed environment variables (e.g. VITE_TD_KEY) are resolved
+ * at build time and baked into the generated JS bundles, so the resulting
+ * static files can be served by any web server (nginx, CDN, etc.) without
+ * needing the original `.env.local` file.
  */
 export default defineConfig({
-    root: 'playground',
-    server: { port: 5190, strictPort: true },
-    plugins: [velaUiSource()],
+  // Use the playground folder as the Vite project root
+  root: resolve(__dirname, 'playground'),
+
+  // Build configuration – output goes to ./dist‑playground
+  build: {
+    outDir: resolve(__dirname, 'dist-playground'),
+    rollupOptions: {
+      // Declare every HTML file that should become a separate page
+      input: {
+        index: resolve(__dirname, 'playground/index.html'),
+        widget: resolve(__dirname, 'playground/widget.html'),
+        workspace: resolve(__dirname, 'playground/workspace.html'),
+      },
+    },
+    // Optional: keep long‑term cache‑friendly filenames (default already does this)
+    // assetsDir: 'assets',
+    // cssCodeSplit: true,
+    // sourcemap: false,
+  },
+
+  // If you have any path aliases or plugins, add them here.
+  // resolve: {
+  //   alias: {
+  //     '@': resolve(__dirname, 'src'),
+  //   },
+  // },
 });

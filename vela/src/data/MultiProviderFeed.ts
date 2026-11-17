@@ -289,7 +289,7 @@ class RegistryFetchFeed implements MarketDataFeed {
         const { provider: name, ticker } = parseSymbol(cfg.symbol ?? '');
         const provider = this.registry.get(name ?? '');
         if (!provider) return Promise.resolve([]);
-        return safeBars(provider, ticker, cfg.timeframe ?? '60', { limit: cfg.bars ?? 500, session: cfg.session });
+        return safeBars(provider, ticker, cfg.timeframe ?? '60', { limit: cfg.bars, session: cfg.session });
     }
 
     async loadProgressive(cfg: MarketConfig, onBatch: (bars: OHLCV[]) => void, opts?: { signal?: AbortSignal }): Promise<OHLCV[] | null> {
@@ -298,7 +298,7 @@ class RegistryFetchFeed implements MarketDataFeed {
         if (!provider) return [];
         if (!provider.getBarsProgressive) return null; // incapable — the caller keeps its own paths
         try {
-            return await provider.getBarsProgressive(ticker, cfg.timeframe ?? '60', { limit: cfg.bars ?? 500, session: cfg.session }, onBatch, opts);
+            return await provider.getBarsProgressive(ticker, cfg.timeframe ?? '60', { limit: cfg.bars, session: cfg.session }, onBatch, opts);
         } catch (e) {
             // Same fault posture as `safeBars`: a throwing provider empties the chart,
             // never rejects the load — batches already painted stay painted. A permanent

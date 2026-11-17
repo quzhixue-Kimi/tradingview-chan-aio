@@ -132,6 +132,10 @@ export const KIT_COMPONENTS: Readonly<Record<string, { readonly parts: readonly 
         parts: ['root', 'area', 'baseline', 'line'],
         settings: ['stroke-width'],
     },
+    stat: {
+        parts: ['root', 'label', 'value', 'sub'],
+        settings: [],
+    },
     switch: {
         parts: ['root', 'control', 'thumb'],
         settings: ['width', 'height', 'thumb-size', 'width-sm', 'height-sm', 'thumb-size-sm'],
