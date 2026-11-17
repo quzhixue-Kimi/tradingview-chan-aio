@@ -165,11 +165,86 @@ function barSig(b) {
   return `${b.open}|${b.high}|${b.low}|${b.close}|${b.volume}`;
 }
 
-function parseSymbol(input) {
+// ---------------------------------------------------------------- symbol resolve
+// 常见的 NYSE Arca ETF 在 TradingView 上的前缀是 AMEX（不是 NASDAQ），内置一份兜底表，
+// 命中就不用联网查询。其余代码走 TradingView 官方的 symbol-search 自动解析并缓存。
+const BUILTIN_EXCHANGE = {
+  SPY: 'AMEX', IWM: 'AMEX', DIA: 'AMEX', GLD: 'AMEX', SLV: 'AMEX', XLF: 'AMEX', XLE: 'AMEX',
+  XLK: 'AMEX', XLV: 'AMEX', XLY: 'AMEX', XLP: 'AMEX', XLI: 'AMEX', XLU: 'AMEX', XLB: 'AMEX',
+  SOXL: 'AMEX', SOXS: 'AMEX', TQQQ: 'NASDAQ', SQQQ: 'NASDAQ', QQQ: 'NASDAQ', SMH: 'NASDAQ',
+  YINN: 'AMEX', YANG: 'AMEX', FXI: 'AMEX', KWEB: 'AMEX', TLT: 'NASDAQ', UVXY: 'AMEX',
+  SPXL: 'AMEX', SPXS: 'AMEX', TNA: 'AMEX', TZA: 'AMEX', LABU: 'AMEX', LABD: 'AMEX',
+  BA: 'NYSE', JPM: 'NYSE', BABA: 'NYSE', TSM: 'NYSE', AAPL: 'NASDAQ', NVDA: 'NASDAQ', TSLA: 'NASDAQ',
+};
+// 用户自定义覆盖：SYMBOL_EXCHANGE_MAP=SPY:AMEX,YINN:AMEX
+for (const pair of String(process.env.SYMBOL_EXCHANGE_MAP || '').split(',')) {
+  const [t, ex] = pair.split(':').map((x) => (x || '').trim().toUpperCase());
+  if (t && ex) BUILTIN_EXCHANGE[t] = ex;
+}
+const US_EXCHANGES = ['NASDAQ', 'NYSE', 'AMEX', 'ARCA', 'BATS', 'CBOE'];
+const resolveCache = new Map(); // ticker -> { exchange, at }
+const RESOLVE_TTL_MS = 24 * 3600 * 1000;
+
+async function searchExchange(ticker) {
+  const url =
+    'https://symbol-search.tradingview.com/symbol_search/v3/?' +
+    new URLSearchParams({ text: ticker, hl: '0', lang: 'en', start: '0', domain: 'production' });
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 5000);
+  try {
+    const r = await fetch(url, {
+      headers: { Origin: 'https://www.tradingview.com', Referer: 'https://www.tradingview.com/' },
+      signal: ctl.signal,
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    const list = Array.isArray(data) ? data : data.symbols || [];
+    const hits = list
+      .filter((x) => String(x.symbol || '').toUpperCase() === ticker)
+      .map((x) => ({
+        ex: String(x.prefix || x.source_id || x.exchange || '').toUpperCase(),
+        type: x.type,
+        country: x.country,
+      }))
+      .filter((x) => US_EXCHANGES.includes(x.ex) && (!x.country || x.country === 'US'));
+    if (!hits.length) return null;
+    // 股票/基金优先，其次按 US_EXCHANGES 顺序
+    hits.sort((a, b) => {
+      const ta = a.type === 'stock' || a.type === 'fund' ? 0 : 1;
+      const tb = b.type === 'stock' || b.type === 'fund' ? 0 : 1;
+      return ta - tb || US_EXCHANGES.indexOf(a.ex) - US_EXCHANGES.indexOf(b.ex);
+    });
+    return hits[0].ex;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveExchange(ticker) {
+  if (BUILTIN_EXCHANGE[ticker]) return BUILTIN_EXCHANGE[ticker];
+  const c = resolveCache.get(ticker);
+  if (c && Date.now() - c.at < RESOLVE_TTL_MS) return c.exchange;
+  try {
+    const ex = await searchExchange(ticker);
+    if (ex) {
+      resolveCache.set(ticker, { exchange: ex, at: Date.now() });
+      log('info', 'symbol resolved', { ticker, exchange: ex });
+      return ex;
+    }
+    log('warn', 'symbol not found in search, fallback to default exchange', { ticker });
+  } catch (e) {
+    log('warn', 'symbol search failed, fallback to default exchange', { ticker, err: errStr(e) });
+  }
+  return cfg.defaultExchange; // 不缓存失败结果，下次还会重试
+}
+
+/** 带 ":" 的完整写法原样使用；只有代码时自动查交易所 */
+async function parseSymbol(input) {
   const s = String(input || '').trim().toUpperCase();
   if (!/^[A-Z0-9._-]+(:[A-Z0-9._-]+)?$/.test(s)) return null;
-  const full = s.includes(':') ? s : `${cfg.defaultExchange}:${s}`;
-  return { full, ticker: full.split(':')[1] };
+  if (s.includes(':')) return { full: s, ticker: s.split(':')[1] };
+  const exchange = await resolveExchange(s);
+  return { full: `${exchange}:${s}`, ticker: s };
 }
 
 /** 经过 nginx 时取真实客户端 IP */
@@ -503,7 +578,7 @@ const server = http.createServer(async (req, res) => {
     // 调试用：curl "http://127.0.0.1:4000/bars?symbol=QQQ&resolution=3&count=20"
     if (url.pathname === '/bars') {
       if (!authOk(req, url)) return json(res, 401, { error: 'unauthorized' });
-      const sym = parseSymbol(url.searchParams.get('symbol'));
+      const sym = await parseSymbol(url.searchParams.get('symbol'));
       const resolution = url.searchParams.get('resolution') || '3';
       const count = Math.min(Number(url.searchParams.get('count') || 100), cfg.historyBars);
       if (!sym) return json(res, 400, { error: 'invalid symbol' });
@@ -550,7 +625,7 @@ wss.on('connection', (ws, req) => {
     ws.isAlive = true;
   });
 
-  ws.on('message', (raw) => {
+  ws.on('message', async (raw) => {
     let msg;
     try {
       msg = JSON.parse(raw.toString());
@@ -561,7 +636,7 @@ wss.on('connection', (ws, req) => {
     if (msg.action === 'ping') return send(ws, { type: 'pong', serverTime: Date.now() });
 
     if (msg.action === 'subscribe' || msg.action === 'unsubscribe') {
-      const sym = parseSymbol(msg.symbol);
+      const sym = await parseSymbol(msg.symbol);
       const resolution = String(msg.resolution || '3');
       if (!sym) return send(ws, { type: 'error', code: 'bad_symbol', message: `Invalid symbol: ${msg.symbol}` });
       if (!SUPPORTED_RESOLUTIONS.has(resolution)) {

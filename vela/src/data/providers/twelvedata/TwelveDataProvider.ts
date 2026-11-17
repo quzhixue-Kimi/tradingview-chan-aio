@@ -25,6 +25,8 @@ function retryAfterMs(res: Response, fallbackMs: number): number {
  * chart is served from another origin, while WebSocket is exempt from CORS.
  */
 const TV_WS_SOCKET = 'wss://tvws.kq2022.eu.org/tv/ws';
+/** Hard cap on bars requested per history call; keep <= server HISTORY_BARS (.env, max 5000). */
+const TV_WS_MAX_COUNT = 2000;
 /** History wait budget. */
 const TV_WS_HISTORY_TIMEOUT_MS = 30_000;
 
@@ -33,8 +35,8 @@ const TV_WS_HISTORY_TIMEOUT_MS = 30_000;
  * Short-interval charts (≤30m) load 1000 bars; longer intervals load 800.
  */
 const TV_WS_COUNT: Record<string, number> = {
-    '1': 1000, '3': 1000, '5': 1000, '15': 1000, '30': 1000,
-    '60': 800, '120': 800, '240': 800, D: 800,
+    '1': 1500, '3': 1500, '5': 1500, '15': 1500, '30': 1500,
+    '60': 1800, '120': 1800, '240': 1800, D: 1800,
 };
 
 /** Canonical timeframe → bar duration in ms (used for live bar bucketing). */
@@ -76,8 +78,8 @@ const FALLBACK_SYMBOLS: readonly SymbolDescriptor[] = [
     { ticker: 'SPY', description: 'SPDR S&P 500 ETF Trust', type: 'etf', prefix: 'AMEX' },
     { ticker: 'SOXL', description: 'Direxion Daily Semiconductor Bull 3X Shares', type: 'etf', prefix: 'AMEX' },
     { ticker: 'YINN', description: 'Direxion Daily FTSE China Bull 3X Shares', type: 'etf', prefix: 'AMEX' },
-    { ticker: 'IWM', description: 'iShares Russell 2000 ETF', type: 'etf', prefix: 'NYSE' },
-    { ticker: 'DIA', description: 'SPDR Dow Jones Industrial Average ETF', type: 'etf', prefix: 'NYSE' },
+    { ticker: 'IWM', description: 'iShares Russell 2000 ETF', type: 'etf', prefix: 'AMEX' },
+    { ticker: 'DIA', description: 'SPDR Dow Jones Industrial Average ETF', type: 'etf', prefix: 'AMEX' },
 ];
 
 /** One row from `/stocks` or `/etfs`. */
@@ -244,11 +246,17 @@ export class TwelveDataProvider implements DataProvider {
         };
     }
 
+    /**
+     * Symbol sent to tv-ws-server. Bare tickers are sent as-is: the server resolves the real
+     * TradingView prefix (e.g. YANG/SPY/SOXL -> AMEX:, QQQ -> NASDAQ:). Do NOT derive the prefix
+     * from the Twelve Data catalog: its `exchange` names (e.g. "NYSE" for NYSE Arca ETFs) do not
+     * match TradingView's prefixes, which produced NYSE:YANG -> "invalid symbol".
+     * A user-typed full form such as "NYSE:BA" is passed through unchanged.
+     */
     private tvSymbol(ticker: string): string {
         const value = ticker.trim();
         if (value.includes(':')) return value;
-        const descriptor = this.symbols.find((item) => item.ticker.toUpperCase() === value.toUpperCase());
-        return `${descriptor?.prefix ?? 'NASDAQ'}:${value.toUpperCase()}`;
+        return value.toUpperCase();
     }
 
     subscribe(ticker: string, timeframe: string, onBar: (b: OHLCV) => void): Unsubscribe {
@@ -262,7 +270,7 @@ export class TwelveDataProvider implements DataProvider {
     /** History from the self-hosted tv-ws-server (subscribe → `history` over WebSocket). */
     private getTvWsBars(ticker: string, tf: string, range: BarRange): Promise<OHLCV[]> {
         const defaultCount = TV_WS_COUNT[tf] ?? 800;
-        const count = Math.min(Math.max(range.limit && range.limit !== 500 ? range.limit : defaultCount, 1), 1000);
+        const count = Math.min(Math.max(range.limit && range.limit !== 500 ? range.limit : defaultCount, 1), TV_WS_MAX_COUNT);
         const symbol = this.tvSymbol(ticker);
         if (typeof WebSocket === 'undefined') return Promise.resolve([]);
         return new Promise<OHLCV[]>((resolve) => {
