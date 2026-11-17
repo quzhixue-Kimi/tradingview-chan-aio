@@ -1,0 +1,457 @@
+// Layout picker — the topbar's LAYOUT dropdown. A bounded 4×4 grid canvas: hover
+// previews the full rows×cols rectangle from the top-left (the table-insert idiom);
+// a click applies it immediately. Registered layouts that are NOT expressible on the
+// canvas (bespoke plugin presets) list as labeled rows under it, and the workspace
+// SYNC switches sit beside the grid.
+//
+// The panel is a lightweight anchored popover (outside-pointerdown + Escape dismiss)
+// rather than a kit Menu: it mixes a canvas and switch rows, which is beyond the menu
+// machine's item model. The host element provides the theme tokens (the panel portals
+// inside it, same as the menu positioner).
+import { msg } from '../core/i18n/message';
+import { textOf } from '../core/i18n/text';
+import type { MessageLike, Translator } from '../core/i18n/types';
+import { injectChromeStyles } from '../ui/chromeStyles';
+import { Tooltip } from '@luxalgo/vela-ui/tooltip';
+import { announceSurface } from '@luxalgo/vela-ui/surface-events';
+import { holdForExit, type SurfaceExit } from '@luxalgo/vela-ui/surface-exit';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
+
+const TEXT = {
+    layout: msg('widget.layoutPicker.layout', 'Layout'),
+    sync: msg('widget.layoutPicker.sync', 'Sync'),
+    gridHint: msg('widget.layoutPicker.gridHint', 'Click a square to apply that columns × rows layout.'),
+    gridSize: msg('widget.layoutPicker.gridSize', '{cols} × {rows}'),
+};
+
+const STYLE_ID = 'vela-widget-layout-picker-v15';
+// One monochrome selection language across the panel: lit cells and sync ON
+// switches both speak --vela-selected-*.
+const CSS = css`@layer vela.chrome {
+
+.vela-lp-layer { position: absolute; z-index: ${t.z.menu}; }
+.vela-lp {
+    background: ${t.surface};
+    color: ${t.fg};
+    border: 1px solid ${t.border.strong};
+    border-radius: 8px;
+    box-shadow: ${t.shadow};
+    padding: 10px 12px 10px;
+    font-size: 13px;
+    user-select: none;
+    transform-origin: top;
+    animation: vela-lp-in ${t.dur.fast} ${t.ease};
+}
+@keyframes vela-lp-in {
+    from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.vela-lp-cols { display: flex; align-items: stretch; gap: 14px; }
+.vela-lp-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: ${t.fg.faint};
+    margin-bottom: 10px;
+}
+/* "?" help badge: hover it for the canvas explainer. */
+.vela-lp-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid ${t.border.strong};
+    color: ${t.fg.muted};
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0;
+    cursor: default;
+    transition: color ${t.dur.fast} ${t.ease}, border-color ${t.dur.fast} ${t.ease};
+}
+.vela-lp-badge:hover { color: ${t.fg.bright}; border-color: ${t.fg.muted}; }
+.vela-lp-tip { display: flex; flex-direction: column; gap: 4px; max-width: 230px; white-space: normal; }
+.vela-lp-vsep { width: 1px; flex: none; align-self: stretch; background: ${t.border.faint}; }
+.vela-lp-layout { width: 132px; display: flex; flex-direction: column; align-items: center; }
+.vela-lp-layout > .vela-lp-heading,
+.vela-lp-layout > .vela-lp-presets { align-self: stretch; }
+.vela-lp-grid { display: grid; grid-template-columns: repeat(4, 24px); grid-auto-rows: 24px; gap: 4px; }
+.vela-lp-sq {
+    all: unset;
+    box-sizing: border-box;
+    border-radius: ${t.radius.sm};
+    background: ${t.hover};
+    border: 1px solid ${t.border.faint};
+    cursor: pointer;
+    transition: background ${t.dur.fast} ${t.ease}, border-color ${t.dur.fast} ${t.ease};
+}
+.vela-lp-sq:hover { background: ${t.hover.strong}; border-color: ${t.border.strong}; }
+/* Selected/previewed squares — the shared monochrome selection chip. */
+.vela-lp-sq[data-on='1'] {
+    background: ${t.selected.bg};
+    border-color: ${t.selected.bg};
+}
+.vela-lp-presets { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+.vela-lp-preset { all: unset; box-sizing: border-box; padding: 5px 8px; border-radius: ${t.radius.sm}; cursor: pointer; color: ${t.fg.muted}; font-size: 12px; white-space: nowrap; transition: transform ${t.dur.fast} ${t.ease}; }
+.vela-lp-preset:hover { background: ${t.hover}; }
+.vela-lp-preset:active { transform: scale(0.98); }
+.vela-lp-preset[data-checked='1'] { background: ${t.hover.strong}; color: ${t.fg.bright}; }
+.vela-lp-sync { display: flex; flex-direction: column; gap: 4px; min-width: 118px; }
+.vela-lp-sync-row { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 14px; padding: 6px 8px; border-radius: 5px; cursor: pointer; }
+.vela-lp-sync-row:hover { background: ${t.hover}; }
+.vela-lp-sync-row .vela-lp-label { flex: 1 1 auto; }
+/* Toggle pill — same control language as the menu's switch rows, monochrome ON state. */
+.vela-lp-switch {
+    position: relative;
+    flex: none;
+    width: 34px;
+    height: 18px;
+    border-radius: 9px;
+    background: ${t.hover};
+    border: 1px solid ${t.border.soft};
+    transition: background 0.16s ease, border-color 0.16s ease;
+}
+.vela-lp-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    inset-inline-start: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: ${t.fg.muted};
+    transition: transform 0.16s ease, background 0.16s ease;
+}
+.vela-lp-switch.on { background: ${t.selected.bg}; border-color: ${t.selected.bg}; }
+.vela-lp-switch.on::after { transform: translateX(16px); background: ${t.selected.fg}; }
+
+}`;
+
+/** The picker canvas is a fixed 4×4 — 16 cells, the workspace pool capacity. */
+const GRID = 4;
+
+/** The current layout's footprint on the canvas (mirrors the workspace's LayoutShape). */
+export type LayoutPickerShape = { rows: number; cols: number };
+
+/** A grid layout's name, columns by rows (`2 × 3`), in the shell's language. */
+export function layoutGridLabel(cols: number, rows: number, i18n?: Translator | null): string {
+    return textOf(i18n, TEXT.gridSize, { cols, rows });
+}
+
+/** Build the bare 4×4 canvas (16 squares, row-major). Interaction wiring stays with the
+ *  caller — the desktop popover adds hover previews, the mobile drawer taps to apply. */
+export function layoutGridCanvas(doc: Document, i18n?: Translator | null): { el: HTMLElement; squares: HTMLButtonElement[] } {
+    injectChromeStyles(STYLE_ID, CSS, doc);
+    const el = doc.createElement('div');
+    el.className = 'vela-lp-grid';
+    const squares: HTMLButtonElement[] = [];
+    for (let r = 0; r < GRID; r += 1) {
+        for (let c = 0; c < GRID; c += 1) {
+            const sq = doc.createElement('button');
+            sq.className = 'vela-lp-sq';
+            sq.dataset.r = String(r);
+            sq.dataset.c = String(c);
+            sq.setAttribute('aria-label', textOf(i18n, TEXT.gridSize, { cols: c + 1, rows: r + 1 }));
+            squares.push(sq);
+            el.appendChild(sq);
+        }
+    }
+    return { el, squares };
+}
+
+/** Light the `shape` rectangle from the top-left (null = nothing lit). */
+export function paintLayoutGrid(squares: readonly HTMLButtonElement[], shape: LayoutPickerShape | null): void {
+    for (const sq of squares) {
+        const on = shape !== null && Number(sq.dataset.r) < shape.rows && Number(sq.dataset.c) < shape.cols;
+        if (on) sq.dataset.on = '1';
+        else delete sq.dataset.on;
+    }
+}
+
+export interface LayoutPickerOptions {
+    /** Topbar button that toggles the panel. */
+    trigger: HTMLElement;
+    /** Positioning/theming host (the widget root — the panel portals inside it). */
+    host: HTMLElement;
+    /** Current layout's canvas shape (null = a preset the canvas cannot express). */
+    shape: () => LayoutPickerShape | null;
+    /** Registered layouts NOT expressible on the canvas — rendered as labeled rows. */
+    presets: () => Array<{ id: string; label: string; checked: boolean }>;
+    onSelectGrid: (rows: number, cols: number) => void;
+    onSelectPreset: (id: string) => void;
+    /** SYNC switch rows (re-read on every open and after every toggle). */
+    syncs: () => Array<{ id: string; label: string; checked: boolean }>;
+    onToggleSync: (id: string) => void;
+    onOpenChange?: (open: boolean) => void;
+    /** The shell's translator (headings, help, square names). Absent: English. */
+    i18n?: Translator;
+}
+
+export class LayoutPicker {
+    private readonly opts: LayoutPickerOptions;
+    private readonly doc: Document;
+    private readonly layer: HTMLElement;
+    /** The picker card inside the layer — the element open/close are announced on. */
+    private readonly panel: HTMLElement;
+    private readonly squares: HTMLButtonElement[] = []; // row-major, 16 entries
+    private readonly infoTip: Tooltip;
+    private readonly presetsEl: HTMLElement;
+    private readonly syncEl: HTMLElement;
+    /** Fixed text re-read in the current language on every open. */
+    private readonly fixedText: Array<{ el: HTMLElement; text: MessageLike }> = [];
+
+    private isOpen = false;
+    /** The card's exit animation after a close; a reopen cancels it. */
+    private exit: SurfaceExit | null = null;
+    /** Hover preview (1-based rows/cols), null = show current shape. */
+    private hover: { rows: number; cols: number } | null = null;
+
+    private readonly onDocPointerDown = (e: PointerEvent): void => {
+        const t = e.target as Node | null;
+        if (t && (this.layer.contains(t) || this.opts.trigger.contains(t))) return;
+        this.close();
+    };
+    private readonly onDocKeydown = (e: KeyboardEvent): void => {
+        if (e.key === 'Escape') this.close();
+    };
+
+    constructor(opts: LayoutPickerOptions) {
+        this.opts = opts;
+        this.doc = opts.host.ownerDocument;
+        injectChromeStyles(STYLE_ID, CSS, this.doc);
+        const doc = this.doc;
+
+        this.layer = doc.createElement('div');
+        this.layer.className = 'vela-ui-layer vela-lp-layer';
+        this.layer.style.display = 'none';
+        const panel = doc.createElement('div');
+        panel.className = 'vela-lp';
+        this.layer.appendChild(panel);
+        this.panel = panel;
+
+        const cols = doc.createElement('div');
+        cols.className = 'vela-lp-cols';
+        panel.appendChild(cols);
+
+        // ── left column: the LAYOUT canvas ──
+        const layoutCol = doc.createElement('div');
+        layoutCol.className = 'vela-lp-layout';
+        const layoutHeading = doc.createElement('div');
+        layoutHeading.className = 'vela-lp-heading';
+        const headingText = doc.createElement('span');
+        headingText.textContent = textOf(opts.i18n, TEXT.layout);
+        this.fixedText.push({ el: headingText, text: TEXT.layout });
+        const badge = doc.createElement('span');
+        badge.className = 'vela-lp-badge';
+        badge.textContent = '?';
+        layoutHeading.append(headingText, badge);
+        layoutCol.appendChild(layoutHeading);
+        this.infoTip = new Tooltip(badge, {
+            host: opts.host,
+            side: 'bottom',
+            content: () => this.tipNode(),
+        });
+
+        const { el: grid, squares } = layoutGridCanvas(doc, opts.i18n);
+        this.squares.push(...squares);
+        layoutCol.appendChild(grid);
+
+        this.presetsEl = doc.createElement('div');
+        this.presetsEl.className = 'vela-lp-presets';
+        layoutCol.appendChild(this.presetsEl);
+        cols.appendChild(layoutCol);
+
+        const vsep = doc.createElement('div');
+        vsep.className = 'vela-lp-vsep';
+        cols.appendChild(vsep);
+
+        // ── right column: the SYNC switches ──
+        const syncCol = doc.createElement('div');
+        const syncHeading = doc.createElement('div');
+        syncHeading.className = 'vela-lp-heading';
+        syncHeading.textContent = textOf(opts.i18n, TEXT.sync);
+        this.fixedText.push({ el: syncHeading, text: TEXT.sync });
+        syncCol.appendChild(syncHeading);
+        this.syncEl = doc.createElement('div');
+        this.syncEl.className = 'vela-lp-sync';
+        syncCol.appendChild(this.syncEl);
+        cols.appendChild(syncCol);
+
+        // ── canvas interactions: hover previews the rectangle, click applies it ──
+        grid.addEventListener('pointerdown', (e) => {
+            const sq = this.squareAt(e);
+            if (!sq) return;
+            e.preventDefault();
+            const { r, c } = this.squarePos(sq);
+            this.close();
+            this.opts.onSelectGrid(r + 1, c + 1);
+        });
+        grid.addEventListener('pointermove', (e) => {
+            const sq = this.squareAt(e);
+            if (!sq) return;
+            const { r, c } = this.squarePos(sq);
+            if (this.hover?.rows !== r + 1 || this.hover?.cols !== c + 1) {
+                this.hover = { rows: r + 1, cols: c + 1 };
+                this.render();
+            }
+        });
+        grid.addEventListener('pointerleave', () => {
+            if (this.hover) {
+                this.hover = null;
+                this.render();
+            }
+        });
+
+        opts.trigger.addEventListener('click', () => this.toggle());
+        opts.trigger.setAttribute('aria-haspopup', 'true');
+        opts.trigger.setAttribute('aria-expanded', 'false');
+        opts.host.appendChild(this.layer);
+    }
+
+    toggle(): void {
+        if (this.isOpen) this.close();
+        else this.open();
+    }
+
+    open(): void {
+        if (this.isOpen) return;
+        this.isOpen = true;
+        this.exit?.cancel();
+        this.exit = null;
+        this.hover = null;
+        this.relabel();
+        this.refresh();
+        this.layer.style.display = '';
+        this.position();
+        this.opts.trigger.setAttribute('aria-expanded', 'true');
+        this.doc.addEventListener('pointerdown', this.onDocPointerDown, true);
+        this.doc.addEventListener('keydown', this.onDocKeydown, true);
+        this.opts.onOpenChange?.(true);
+        // After the host heard it — a listener that closes the picker again then reports last.
+        if (this.isOpen) announceSurface(this.panel, true, 'popover', this.opts.trigger);
+    }
+
+    close(): void {
+        if (!this.isOpen) return;
+        this.isOpen = false;
+        // Still showing — the close bubbles before the layer hides.
+        announceSurface(this.panel, false, 'popover', this.opts.trigger);
+        this.exit = holdForExit(this.panel, () => {
+            this.exit = null;
+            if (!this.isOpen) this.layer.style.display = 'none';
+        });
+        this.opts.trigger.setAttribute('aria-expanded', 'false');
+        this.doc.removeEventListener('pointerdown', this.onDocPointerDown, true);
+        this.doc.removeEventListener('keydown', this.onDocKeydown, true);
+        this.opts.onOpenChange?.(false);
+    }
+
+    /** Re-read shape/presets/syncs and re-render (no-op while closed — `open` re-reads). */
+    refresh(): void {
+        if (!this.isOpen) return;
+        this.renderPresets();
+        this.renderSyncs();
+        this.render();
+    }
+
+    destroy(): void {
+        this.close();
+        this.exit?.finish();
+        this.infoTip.destroy();
+        this.layer.remove();
+    }
+
+    /** Fixed text and square names in the current language. */
+    relabel(): void {
+        const i18n = this.opts.i18n;
+        for (const { el, text } of this.fixedText) el.textContent = textOf(i18n, text);
+        this.infoTip.setContent(() => this.tipNode());
+        for (const sq of this.squares) {
+            const { r, c } = this.squarePos(sq);
+            sq.setAttribute('aria-label', textOf(i18n, TEXT.gridSize, { cols: c + 1, rows: r + 1 }));
+        }
+    }
+
+    // ── internals ──
+    private squareAt(e: PointerEvent): HTMLButtonElement | null {
+        const sq = (e.target as Element | null)?.closest?.('.vela-lp-sq');
+        return sq instanceof HTMLButtonElement ? sq : null;
+    }
+
+    private squarePos(sq: HTMLButtonElement): { r: number; c: number } {
+        return { r: Number(sq.dataset.r), c: Number(sq.dataset.c) };
+    }
+
+    /** Help copy for the LAYOUT "?" badge. */
+    private tipNode(): HTMLElement {
+        const tip = this.doc.createElement('div');
+        tip.className = 'vela-lp-tip';
+        tip.textContent = textOf(this.opts.i18n, TEXT.gridHint);
+        return tip;
+    }
+
+    /** Project the interaction state onto the DOM (the hover/current rectangle). */
+    private render(): void {
+        paintLayoutGrid(this.squares, this.hover ?? this.opts.shape());
+    }
+
+    private renderPresets(): void {
+        const doc = this.doc;
+        this.presetsEl.replaceChildren();
+        const presets = this.opts.presets();
+        this.presetsEl.style.display = presets.length > 0 ? '' : 'none';
+        for (const p of presets) {
+            const b = doc.createElement('button');
+            b.className = 'vela-lp-preset';
+            b.textContent = p.label;
+            if (p.checked) b.dataset.checked = '1';
+            b.addEventListener('click', () => {
+                this.close();
+                this.opts.onSelectPreset(p.id);
+            });
+            this.presetsEl.appendChild(b);
+        }
+    }
+
+    private renderSyncs(): void {
+        const doc = this.doc;
+        this.syncEl.replaceChildren();
+        for (const s of this.opts.syncs()) {
+            const row = doc.createElement('button');
+            row.className = 'vela-lp-sync-row';
+            const label = doc.createElement('span');
+            label.className = 'vela-lp-label';
+            label.textContent = s.label;
+            const pill = doc.createElement('span');
+            pill.className = 'vela-lp-switch' + (s.checked ? ' on' : '');
+            pill.setAttribute('aria-hidden', 'true');
+            row.setAttribute('role', 'switch');
+            row.setAttribute('aria-checked', String(s.checked));
+            row.append(label, pill);
+            row.addEventListener('click', () => {
+                this.opts.onToggleSync(s.id);
+                this.renderSyncs(); // switches stay open — flip, see, flip again
+            });
+            this.syncEl.appendChild(row);
+        }
+    }
+
+    /** Anchor under the trigger, clamped to the host's right edge. */
+    private position(): void {
+        const hostRect = this.opts.host.getBoundingClientRect();
+        const trigRect = this.opts.trigger.getBoundingClientRect();
+        let left = trigRect.left - hostRect.left;
+        // The kit menus' positioning gutter, so every topbar dropdown clears the bar alike.
+        const top = trigRect.bottom - hostRect.top + 8;
+        const width = this.layer.offsetWidth;
+        if (left + width > hostRect.width - 8) left = Math.max(8, hostRect.width - 8 - width);
+        this.layer.style.left = `${left}px`;
+        this.layer.style.top = `${top}px`;
+    }
+}

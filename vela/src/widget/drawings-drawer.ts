@@ -1,0 +1,306 @@
+// Drawings drawer (mobile) — the bottom-sheet counterpart of the docked drawing
+// toolbar: a search bar, the tool groups as horizontally scrollable tabs, and the
+// active group's tools as a touch-sized list with favorite stars. Searching flattens
+// every group into one filtered list. Data comes from the same DOM-free toolbar model
+// the docked bar paints (`ToolbarDefinition`), so custom `options.drawings` sets and
+// plugin-registered types appear here automatically.
+import { Drawer } from '@luxalgo/vela-ui/drawer';
+import { createTabs, tabsDef, type TabsHandle } from '@luxalgo/vela-ui/tabs';
+import { iconEl } from '@luxalgo/vela-ui/icons';
+import { injectChromeStyles } from '../ui/chromeStyles';
+import type { ToolbarDefinition, ToolDefinition } from '../core/drawings/toolbar';
+import type { DrawingTypeKey } from '../core/drawings/Drawing';
+import { msg } from '../core/i18n/message';
+import { sourceText, textOf } from '../core/i18n/text';
+import type { MessageLike, Translator } from '../core/i18n/types';
+import { css } from '@luxalgo/vela-ui/css';
+import { t } from '@luxalgo/vela-ui/t';
+
+const TEXT = {
+    title: msg('widget.drawingsDrawer.title', 'Drawings'),
+    search: msg('widget.drawingsDrawer.search', 'Search tools…'),
+    favorite: msg('widget.drawingsDrawer.favorite', 'Favorite {tool}'),
+    noMatch: msg('widget.drawingsDrawer.noMatch', 'No tools match.'),
+};
+
+const STYLE_ID = 'vela-widget-drawings-drawer';
+const CSS = css`@layer vela.chrome {
+
+/* Search + tabs stay pinned while the tool list scrolls underneath. */
+.vela-dd-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: ${t.surface};
+    padding-top: 2px;
+}
+.vela-dd-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    margin: 0 2px 8px;
+    border: 1px solid ${t.border};
+    border-radius: 8px;
+    color: ${t.fg.muted};
+    background: ${t.surface};
+}
+.vela-dd-search input {
+    all: unset;
+    user-select: text;
+    -webkit-user-select: text;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 14px;
+    color: ${t.fg.bright};
+}
+.vela-dd-tabs {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    /* The strip scrolls sideways itself — its touches are native scroll, not tab swipes
+       (the drawer body is pan-y so everywhere ELSE a sideways move swipes the tabs). */
+    touch-action: pan-x;
+    padding: 0 2px 8px;
+    border-bottom: 1px solid ${t.border};
+    background: ${t.surface};
+}
+.vela-dd-tabs::-webkit-scrollbar { display: none; }
+.vela-dd-list { padding: 6px 0 4px; }
+.vela-dd-section {
+    padding: 10px 2px 6px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: ${t.fg.muted};
+}
+.vela-dd-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 44px;
+    padding: 0 2px;
+    border-radius: 8px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.vela-dd-row:active { background: ${t.hover}; }
+.vela-dd-row[data-active='1'] { background: ${t.hover}; }
+.vela-dd-row[data-active='1'] .vela-dd-label { color: ${t.accent}; }
+.vela-dd-glyph { flex: none; width: 24px; height: 24px; color: ${t.fg}; }
+.vela-dd-glyph svg { width: 24px; height: 24px; }
+.vela-dd-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: ${t.fg.bright}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vela-dd-star {
+    all: unset;
+    box-sizing: border-box;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    color: ${t.fg.muted};
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.vela-dd-star[data-on='1'] { color: ${t.highlight}; }
+.vela-dd-empty { padding: 18px 2px; color: ${t.fg.muted}; font-size: 13px; }
+
+}`;
+
+export interface DrawingsDrawerOptions {
+    host: HTMLElement;
+    /** Read live at open — the toolbar model (custom sets / late-registered types apply). */
+    toolbar: () => ToolbarDefinition;
+    currentTool: () => DrawingTypeKey | null;
+    isFavorite: (type: DrawingTypeKey) => boolean;
+    onFavorite: (type: DrawingTypeKey, on: boolean) => void;
+    onSelect: (type: DrawingTypeKey) => void;
+    onOpenChange?: (open: boolean) => void;
+    /** The shell's translator, read each time the drawer opens. Absent: English. */
+    i18n?: () => Translator;
+}
+
+export class DrawingsDrawer {
+    private readonly drawer: Drawer;
+    private readonly input: HTMLInputElement;
+    private readonly tabs: TabsHandle;
+    private readonly list: HTMLElement;
+    private definition: ToolbarDefinition = { groups: [] };
+    private activeGroup = '';
+
+    constructor(private readonly opts: DrawingsDrawerOptions) {
+        const doc = opts.host.ownerDocument;
+        injectChromeStyles(STYLE_ID, CSS, doc);
+        this.drawer = new Drawer({
+            host: opts.host,
+            title: this.t(TEXT.title),
+            onOpenChange: opts.onOpenChange,
+            // Swiping across the tool list pages through the group tabs.
+            onSwipe: (dir) => this.stepGroup(dir === 'left' ? 1 : -1),
+        });
+
+        const sticky = doc.createElement('div');
+        sticky.className = 'vela-dd-sticky';
+
+        const search = doc.createElement('div');
+        search.className = 'vela-dd-search';
+        search.appendChild(iconEl('search', doc));
+        this.input = doc.createElement('input');
+        this.input.type = 'text';
+        this.input.placeholder = this.t(TEXT.search);
+        this.input.addEventListener('input', () => this.renderList());
+        search.appendChild(this.input);
+
+        this.tabs = createTabs({
+            variant: 'soft',
+            className: 'vela-dd-tabs',
+            items: [],
+            onValueChange: (id) => {
+                this.activeGroup = id;
+                this.renderList();
+            },
+        });
+        // Picking a tab — the active one included — leaves search mode.
+        this.tabs.el.addEventListener('click', (e) => {
+            if (!(e.target instanceof Element) || !e.target.closest(`[data-slot='${tabsDef.slot('trigger')}']`) || !this.input.value) return;
+            this.input.value = '';
+            this.renderList();
+        });
+        sticky.append(search, this.tabs.el);
+
+        this.list = doc.createElement('div');
+        this.list.className = 'vela-dd-list';
+
+        this.drawer.body.append(sticky, this.list);
+    }
+
+    private t(m: MessageLike, values?: Record<string, string | number>): string {
+        return textOf(this.opts.i18n?.() ?? null, m, values);
+    }
+
+    open(): void {
+        this.drawer.setTitle(this.t(TEXT.title));
+        this.input.placeholder = this.t(TEXT.search);
+        this.definition = this.opts.toolbar();
+        if (!this.definition.groups.some((g) => g.id === this.activeGroup)) this.activeGroup = this.definition.groups[0]?.id ?? '';
+        this.input.value = '';
+        this.renderTabs();
+        this.renderList();
+        this.drawer.show();
+    }
+
+    close(): void {
+        this.drawer.hide();
+    }
+
+    destroy(): void {
+        this.drawer.destroy();
+    }
+
+    /** Move the active group tab by `step` (a horizontal swipe on the list). Search mode
+     *  shows the flattened results — no tabs to page through, so the swipe is inert. */
+    private stepGroup(step: number): void {
+        if (this.input.value.trim()) return;
+        const groups = this.definition.groups;
+        const next = groups[groups.findIndex((g) => g.id === this.activeGroup) + step];
+        if (!next) return;
+        this.activeGroup = next.id;
+        this.renderTabs();
+        this.renderList();
+        this.tabs.trigger(next.id)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    }
+
+    private renderTabs(): void {
+        this.tabs.setItems(this.definition.groups.map((g) => ({ value: g.id, label: this.t(g.label) })));
+        this.tabs.setValue(this.activeGroup);
+    }
+
+    private renderList(): void {
+        const doc = this.list.ownerDocument;
+        this.list.replaceChildren();
+        const locale = this.opts.i18n?.().locale;
+        const lower = (s: string): string => {
+            try {
+                return s.toLocaleLowerCase(locale);
+            } catch {
+                return s.toLowerCase();
+            }
+        };
+        const query = lower(this.input.value.trim());
+        const active = this.opts.currentTool();
+
+        const section = (label: string): void => {
+            const el = doc.createElement('div');
+            el.className = 'vela-dd-section';
+            el.textContent = label;
+            this.list.appendChild(el);
+        };
+        const row = (tool: ToolDefinition): void => {
+            const el = doc.createElement('div');
+            el.className = 'vela-dd-row';
+            if (tool.type === active) el.dataset.active = '1';
+            const glyph = doc.createElement('span');
+            glyph.className = 'vela-dd-glyph';
+            glyph.innerHTML = tool.icon;
+            const label = doc.createElement('span');
+            label.className = 'vela-dd-label';
+            label.textContent = this.t(tool.label);
+            const star = doc.createElement('button');
+            star.className = 'vela-dd-star';
+            const paintStar = (on: boolean): void => {
+                star.replaceChildren(iconEl(on ? 'star-filled' : 'star', doc));
+                if (on) star.dataset.on = '1';
+                else delete star.dataset.on;
+            };
+            paintStar(this.opts.isFavorite(tool.type));
+            star.setAttribute('aria-label', this.t(TEXT.favorite, { tool: this.t(tool.label) }));
+            star.addEventListener('click', (e) => {
+                e.stopPropagation(); // the row underneath arms the tool — a star tap must not
+                const on = !this.opts.isFavorite(tool.type);
+                this.opts.onFavorite(tool.type, on);
+                paintStar(on);
+            });
+            el.append(glyph, label, star);
+            el.addEventListener('click', () => {
+                this.opts.onSelect(tool.type);
+                this.drawer.hide();
+            });
+            this.list.appendChild(el);
+        };
+
+        if (query) {
+            // Search flattens every group; group labels become the section headers.
+            let any = false;
+            for (const group of this.definition.groups) {
+                // A tool matches by its name as shown, or by its English name.
+                const hits = group.tools.filter((t) => lower(this.t(t.label)).includes(query) || sourceText(t.label).toLowerCase().includes(query));
+                if (hits.length === 0) continue;
+                any = true;
+                section(this.t(group.label));
+                for (const tool of hits) row(tool);
+            }
+            if (!any) {
+                const empty = doc.createElement('div');
+                empty.className = 'vela-dd-empty';
+                empty.textContent = this.t(TEXT.noMatch);
+                this.list.appendChild(empty);
+            }
+            return;
+        }
+
+        const group = this.definition.groups.find((g) => g.id === this.activeGroup);
+        if (!group) return;
+        if (group.sections && group.sections.length > 0) {
+            for (const s of group.sections) {
+                section(this.t(s.label));
+                for (const tool of s.tools) row(tool);
+            }
+        } else {
+            for (const tool of group.tools) row(tool);
+        }
+    }
+}
