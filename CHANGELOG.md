@@ -2,6 +2,127 @@
 
 All notable changes to Vela, newest first.
 
+## [0.10.13]
+
+### Added
+
+- **Apps can add their own buttons to a selected drawing.** `registerDrawingAction` puts an
+  icon button on the toolbar that floats by a selected drawing, next to its settings wheel,
+  and a labelled button in the drawing's settings dialog. Each action decides which drawings
+  it applies to, so an app can offer an alert on lines and channels only, and it receives the
+  drawing as it is when the user clicks.
+
+## [0.10.12]
+
+### Fixed
+
+- **Open menus stay with the chart when the page scrolls.** On a page that scrolls around the
+  chart, an open timeframe, chart style or time zone menu stayed where it was on screen
+  while its button scrolled away, so it came loose from the toolbar. A right-click menu or
+  the alerts list jumped to the top of the window, where a page header could hide it. An
+  open menu now keeps its place in the chart and moves with it, as the layout menu already
+  did. A chart that fills its page was not affected.
+- **Candles with the wick turned off stay visible when you zoom out.** Once candles became
+  too narrow to show a body, a chart with **Wick** off in the candle settings drew nothing,
+  and zooming out further brought the candles back as thin lines that ignored the setting.
+  A candle too narrow for a body now draws as a thin line over its body, in the body's
+  color, or in the border's color when only the border is on. With the body, border and
+  wick all off, candles stay hidden at every zoom.
+
+## [0.10.11]
+
+### Fixed
+
+- **The indicators added in 0.10.9 read better in 17 languages.** A second, line-by-line
+  reading of the translations that shipped in 0.10.10 corrected 75 messages. Tooltips that
+  could be misread now say what the English says (Arabic, Spanish, Portuguese, Turkish).
+  Short titles no longer abbreviate volatility the way the same pack abbreviates volume
+  (Hindi, Portuguese, Spanish, Turkish). Names follow the market's own term where there is
+  one: Advance/Decline in Japanese, the Accumulative Swing Index in Chinese, Momentum in
+  Traditional Chinese, the Guppy averages in Korean. In Polish, the Double, Triple and
+  Multiple moving averages are named by their count, so they no longer read as double or
+  triple smoothing. A plot named after an indicator whose name stays in English keeps that
+  name too (German, Indonesian, Italian, Thai). Malay and Vietnamese needed no change.
+
+## [0.10.10]
+
+### Fixed
+
+- **The indicators added in 0.10.9 read in every shipped language.** The twenty-five
+  built-in indicators of 0.10.9 showed their names, settings, tooltips and plot names in
+  English whatever the chart's language. All 19 language packs now translate them, in each
+  pack's own vocabulary: a pack that keeps most indicator names in English keeps the new
+  ones too. The **Free pan** switch of the chart settings and the keyboard help line about
+  typing a timeframe are translated as well, so every pack again covers every message.
+
+## [0.10.9]
+
+### Added
+
+- **`symbolMenuFromKey` keeps typed letters from opening the symbol search.** Typing a
+  letter or `0` on a chart opens the symbol search, which takes those keys from a page that
+  uses bare letters for its own shortcuts, or that chooses the symbol outside the chart.
+  `symbolMenuFromKey: false` on a workspace or widget leaves them to the page. The option
+  is on by default, so nothing changes until you set it. The topbar's symbol button still
+  opens the search, typing a digit still opens the timeframe entry, and the shortcuts panel
+  lists only what the shell does.
+
+- **Twenty-five more built-in indicators.** The Indicators menu and `addNativeIndicator` gain
+  Median Price, Typical Price, Average Price, Momentum, Moving Average Channel, Standard
+  Error Bands, Volatility Index, Net Volume, Accelerator Oscillator, Accumulative Swing
+  Index, Rank Correlation Index, Majority Rule, Advance/Decline, Trend Strength Index, Chop
+  Zone, Standard Error, Volatility O-H-L-C and Volatility Zero Trend Close-to-Close, and
+  seven moving-average studies: MA Cross, EMA Cross, MA with EMA Cross, Moving Average
+  Double, Moving Average Triple, Moving Average Multiple and Guppy Multiple Moving Average.
+  Each has its own settings, legend row and saved state, like the other built-in studies.
+  Rank Correlation Index and Trend Strength Index read from −1 to 1. Volatility Index is
+  Wilder's volatility stop: a line that trails the most favorable close by a multiple of
+  the average true range and changes sides when a close crosses it. The two volatility
+  studies count each bar by the time since the bar before it, so a weekend or an overnight
+  gap weighs as the days it spans, on any timeframe. The Accumulative Swing Index line
+  takes the bullish color above its last confirmed swing high and the bearish color below
+  its last confirmed swing low. The three cross studies draw two averages and mark every
+  bar where they change sides, in the bullish or the bearish color by the way the first
+  crossed the second. Moving Average Double, Triple and Multiple draw two, three or six
+  averages of one source as Simple, Exponential or Weighted lines, and the Guppy study
+  draws its six short and six long exponential averages in two colors.
+
+- **Drawings can belong to the chart's symbol.** By default a chart keeps its drawings when
+  its symbol changes, so a line drawn on one instrument stays at the same prices on the
+  next. With `drawings: { clearOnSymbolChange: true }`, or
+  `chart.drawings.setClearOnSymbolChange(true)` on a live chart, switching to another symbol
+  removes every drawing as the switch starts. A timeframe or session change keeps them, and
+  a restored state keeps the drawings it carries. Vela stores nothing per symbol itself: the
+  drawing tools guide shows how an app keeps one document per symbol and puts it back.
+  Three additions serve that. `chart.drawings.clear()` removes every drawing as one undo
+  step. The new `drawing:history` event tells you when an undo or a redo changed the
+  drawings, which no other drawing event did. The new `drawing:replaced` event tells you
+  when the drawings changed as a whole, because a document was loaded or the symbol
+  changed; the object tree and the Undo button follow it, so neither is left showing
+  drawings or steps that are gone.
+
+### Changed
+
+- **Charts with many line plots pan and zoom about three times faster.** A chart that
+  stacks many indicator lines, or one zoomed far out, used to stutter while you dragged or
+  zoomed it. With the default WebGL drawing, each frame of such a chart now takes about a
+  third of the time it did, and the gain grows with the number of lines and bars on screen.
+  Lines, the dot markers of a circles plot and the line and area price styles all benefit.
+  The picture itself is unchanged, pixel for pixel.
+
+### Fixed
+
+- **Historical Volatility no longer draws its oldest bars as a black block.** The first
+  hundred bars of the chart's history showed a solid black line and fill. They now draw in
+  the neutral color until the indicator has a hundred bars of its own readings to grade the
+  color by.
+
+- **An undone drawing no longer comes back after a reload.** Undoing or redoing a drawing
+  change in a workspace was not reported as a change, so the saved state, and the app
+  listening to `state:changed`, kept the drawings as they were before the undo until
+  something else changed. The same held for a drawings document loaded with
+  `chart.drawings.fromJSON`. Both are saved now.
+
 ## [0.10.8]
 
 ### Changed
