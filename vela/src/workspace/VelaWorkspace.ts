@@ -677,8 +677,9 @@ export class VelaWorkspace {
             onOpenChange: (open) => {
                 // In-chart dialogs (indicator inputs, chart settings) live inside a cell's
                 // chart container, so opening the search from the topbar never hits their
-                // outside-dismiss — close them on every cell explicitly.
-                if (open) for (const cell of this.cells()) cell.chart.renderer.closeDialogs();
+                // outside-dismiss — close them on every cell explicitly, EXCEPT when the
+                // picker was launched from inside an indicator's own symbol input.
+                if (open && !this.symbolPicker.isPicking) for (const cell of this.cells()) cell.chart.renderer.closeDialogs();
                 this.trackDialog(open);
             },
         });
@@ -695,7 +696,9 @@ export class VelaWorkspace {
                       i18n: this.localeState,
                       library: () => this.active.libraryRows(),
                       onChart: () => this.active.onChartRows(),
-                      onAdd: (i) => this.active.addFromLibrary(i),
+                      onAdd: (i) => {
+                          if (this.active.addFromLibrary(i)) this.indicatorPicker?.close();
+                      },
                       onRemove: (i) => this.active.removeFromChart(i),
                       onOpenChange: (open) => {
                           // Same rule as the symbol search: the renderer's in-chart dialogs never see
@@ -728,7 +731,7 @@ export class VelaWorkspace {
             onFullscreenClick: () => this.toggleFullscreen(),
             onAlertsClick: (anchor) => this.openAlertsMenu(anchor),
             timeframe: '60',
-            timeframes: opts.timeframes ?? DEFAULT_TIMEFRAMES,
+            timeframes: this.resolvedTimeframes(),
             timeframeFavorites: this.tfFavs,
             priceStyle: 'candles',
             onTimeframe: (tf) => this.setActiveTimeframe(tf),
@@ -1819,6 +1822,7 @@ export class VelaWorkspace {
         if (!cell) return;
         this.topbar.setSymbol(cell.symbol);
         this.topbar.setTimeframe(cell.timeframe);
+        this.topbar.setUnavailableTimeframes(cell.unavailableTimeframes());
         this.topbar.setPriceStyle(cell.priceStyle, cell.unavailablePriceStyles());
         this.topbar.setIndicatorCount(cell.indicatorCount);
         this.topbar.renderActions(); // contributed `when()` gates may depend on the active cell
@@ -2122,6 +2126,7 @@ export class VelaWorkspace {
                 watermark: this.opts.watermark !== false,
                 nativeBackend: this.cellBackend,
                 dialogHost: this.root,
+                symbolPicker: (current, onPick) => this.symbolPicker.open(current.replace(/^[^:]*:/, ''), { onSelect: onPick }),
                 timezone: () => this.timezone,
                 setTimezone: (zone) => this.setTimezone(zone),
                 context: () => this.context(),
@@ -2135,6 +2140,8 @@ export class VelaWorkspace {
                 onMarketChanged: (id) => this.onCellMarketChanged(id),
                 onPriceStyleChanged: (id) => this.onCellPriceStyleChanged(id),
                 onPriceStyleShown: (id) => this.projectCellPriceStyle(id),
+                timeframes: () => this.resolvedTimeframes(),
+                onTimeframesShown: (id) => this.projectCellTimeframes(id),
                 onIndicatorsChanged: (id) => this.onCellIndicatorsChanged(id),
                 onStatusPrefsChanged: (id) => this.propagateStylePrefs(id),
                 onStateDirty: () => this.markStateDirty(),
@@ -2936,6 +2943,9 @@ export class VelaWorkspace {
         if (!cell) return;
         this.topbar.setSymbol(cell.symbol);
         this.topbar.setTimeframe(cell.timeframe);
+        this.topbar.setUnavailableTimeframes(cell.unavailableTimeframes());
+        this.topbar.renderActions(); // contributed `when()` gates may depend on the active timeframe/symbol
+        this.mobileBar?.renderActions();
         this.mobileBar?.setSymbol(cell.symbol);
         this.mobileBar?.setTimeframe(cell.timeframe);
         this.objectTree.setSymbol(cell.symbol);
@@ -2962,6 +2972,19 @@ export class VelaWorkspace {
         const cell = this.cellsById.get(id);
         if (!cell) return;
         this.topbar.setPriceStyle(cell.priceStyle, cell.unavailablePriceStyles());
+    }
+
+    /** The topbar timeframe menu's unavailable entries from the cell, if active. */
+    private projectCellTimeframes(id: string): void {
+        if (id !== this.activeId) return;
+        const cell = this.cellsById.get(id);
+        if (!cell) return;
+        this.topbar.setUnavailableTimeframes(cell.unavailableTimeframes());
+    }
+
+    /** Configured timeframe presets: explicit host option wins, else plugin shell defaults, else built-in. */
+    private resolvedTimeframes(): readonly string[] {
+        return this.opts.timeframes ?? shellDefaults().timeframes ?? DEFAULT_TIMEFRAMES;
     }
 
     /** Trigger ② — a cell's indicator ledger changed: count + picker only if active. */
@@ -3068,10 +3091,11 @@ export class VelaWorkspace {
     private openTimeframeDrawer(): void {
         this.tfDrawer ??= new TimeframeDrawer({
             host: this.root,
-            timeframes: this.opts.timeframes ?? DEFAULT_TIMEFRAMES,
+            timeframes: this.resolvedTimeframes(),
             ranges: RANGE_PRESETS,
             currentTimeframe: () => this.active.timeframe,
             activeRange: () => this.active.activeRangeId,
+            unavailableTimeframes: () => this.active.unavailableTimeframes(),
             onTimeframe: (tf) => this.setActiveTimeframe(tf),
             onRange: (preset) => {
                 this.active.applyRange(preset);
